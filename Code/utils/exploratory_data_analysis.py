@@ -1,9 +1,19 @@
 #%%
 import pandas as pd 
+import numpy as np
 from os import path, walk
+from tensorflow.signal import rfft
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+GRAPHIC_COLORS = {
+    'Affluent' : 'cornflowerblue',
+    'Comfortable' : 'mediumseagreen',
+    'Adversity' : 'goldenrod',
+    'ACORN-U' : 'slategray',
+    'weather' : 'indianred'
+}
 
 def read_acorn_group_blocks(
     blocks_path : str ='..//Data//daily_dataset'):
@@ -106,7 +116,8 @@ def plot_total_energy_per_acorn(
     total_per_acorn = [dict_data[acorn][sum_col].sum() for acorn \
                                                         in lst_acorn_names]
 
-    colors = ['cornflowerblue', 'mediumseagreen', 'goldenrod', 'indianred']
+    # colors = ['cornflowerblue', 'mediumseagreen', 'goldenrod', 'indianred']
+    colors = [GRAPHIC_COLORS.get(acorn) for acorn in lst_acorn_names]
     # ax.barh(y=range(len(lst_acorn_names)), width=total_per_acorn, 
     #        tick_label=lst_acorn_names,
     #        color=colors)
@@ -142,7 +153,8 @@ def plot_total_relative_energy_per_acorn(
                                 dict_data[acorn][count_col].sum() for acorn \
                                                             in lst_acorn_names]
 
-    colors = ['cornflowerblue', 'mediumseagreen', 'goldenrod', 'indianred']
+    # colors = ['cornflowerblue', 'mediumseagreen', 'goldenrod', 'indianred']
+    colors = [GRAPHIC_COLORS.get(acorn) for acorn in lst_acorn_names]
     # ax.barh(y=range(len(lst_acorn_names)), width=total_per_acorn, 
     #        tick_label=lst_acorn_names,
     #        color=colors)
@@ -192,13 +204,15 @@ def correlate_energy_weather_data(
     sr_weather = sr_weather*(-1)**int(invert_weather_curve)
 
     # Get colors from list
-    colors = ['cornflowerblue', 'mediumseagreen', 'goldenrod', 'indianred']
+    # colors = ['cornflowerblue', 'mediumseagreen', 'goldenrod', 'indianred']
+    colors = [GRAPHIC_COLORS.get(acorn) for acorn in lst_acorn_names]
 
     # Plot consumption and weather data
-    for acorn, color in zip(lst_acorn_names, colors[:len(lst_acorn_names)]):
+    for acorn, color in zip(lst_acorn_names, colors):
         ax.plot(rel_energy_per_acorn[acorn].sort_index(), color=color)
     ax2 = ax.twinx()
-    ax2.plot(sr_weather.sort_index(), '--', color='slategray')
+    ax2.plot(sr_weather.sort_index(), color=GRAPHIC_COLORS.get('weather'),
+             linewidth=.6)
 
     ax.set_xlabel('Data')
     ax.set_ylabel('Consumo Energético Relativo [kWh/(número medições)]')
@@ -210,7 +224,7 @@ def correlate_energy_weather_data(
                                                          lst_acorn_names))
     ax.set_xlim(x_lims)
     handles = [plt.Rectangle((0,0), 1, 1, color=c) for c in \
-                                colors[:len(lst_acorn_names)]+['lightslategray']]
+                                colors+[GRAPHIC_COLORS.get('weather')]]
     lgd = ax.legend(handles=handles, labels=lst_acorn_names+[weather_col], 
               bbox_to_anchor=[1.05, 1], loc=2, title='Acorns da pesquisa')
 
@@ -219,6 +233,27 @@ def correlate_energy_weather_data(
         plt.savefig(save_filename, bbox_extra_artist=(lgd,), bbox_inches='tight')
     else:
         return fig, ax
+
+def plot_fourier_trsnfd_weather_data(sr_weather : pd.Series):
+    
+    fft = rfft(sr_weather)
+    f_per_dataset = np.arange(0, len(fft))
+
+    # Get number of half hour samples
+    n_samples_hours = len(sr_weather)
+    hours_per_year = 24*365.2524
+    years_per_dataset = n_samples_hours / hours_per_year
+
+    f_per_year = f_per_dataset / years_per_dataset
+    plt.step(f_per_year, np.abs(fft))
+    plt.ylim((-1,50000))
+    plt.xscale('log')
+    plt.xlim([0.1, max(plt.xlim())])
+    plt.xticks([1, 365.2524], labels=['1/Year', '1/day'])
+    _ = plt.xlabel('Frequency (log scale)')
+
+    return fft
+    
 
 #%%
 if __name__ == '__main__':

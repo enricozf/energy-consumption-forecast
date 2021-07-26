@@ -1,8 +1,10 @@
 #%%
+from numpy.core.numeric import roll
 import pandas as pd 
 import numpy as np
 from os import path, walk
 from tensorflow.signal import rfft
+from scipy.fftpack import fft, fftshift, ifft, ifftshift, fftfreq
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -234,69 +236,175 @@ def correlate_energy_weather_data(
     else:
         return fig, ax
 
-def plot_fourier_trsnfd_weather_data(sr_weather : pd.Series):
+def find_closest_2base_power(target):
+    expoent = 0
+    while target > 2**expoent:
+        expoent+=1
+
+    return 2**expoent
+
+#TODO: Rodar média movel sobre dados e deis fazer a fft
+def plot_fourier_trsnfd_weather_data(sr_weather : pd.Series, r_size : int):
     
-    fft = rfft(sr_weather)
-    f_per_dataset = np.arange(0, len(fft))
+    # fft = rfft(sr_weather)
+    fft_signal = fftshift(fft(sr_weather,
+                              find_closest_2base_power(sr_weather.size)))
+    f_per_dataset = np.arange(0, len(fft_signal))
 
     # Get number of half hour samples
     n_samples_hours = len(sr_weather)
-    hours_per_year = 24*365.2524
-    years_per_dataset = n_samples_hours / hours_per_year
+    counts_per_year = 24*365.2524 / r_size
+    years_per_dataset = n_samples_hours / counts_per_year
 
     f_per_year = f_per_dataset / years_per_dataset
-    plt.step(f_per_year, np.abs(fft))
-    plt.ylim((-1,50000))
+    plt.step(f_per_year, np.abs(fft_signal)) 
+    # plt.ylim((-1,50000))
     plt.xscale('log')
-    plt.xlim([0.1, max(plt.xlim())])
-    plt.xticks([1, 365.2524], labels=['1/Year', '1/day'])
+    # plt.xlim([0.1, max(plt.xlim())])
+    # plt.xticks([1, 365.2524], labels=['1/Year', '1/day'])
     _ = plt.xlabel('Frequency (log scale)')
 
-    return fft
+    return fft_signal
     
+def restore_fft_signal(
+    fft_signal : np.ndarray, 
+    time_arr : np.ndarray,
+    shift_flag : bool = True,):
+    signal_copy = fft_signal.copy()
+    signal_len = signal_copy.size
+    if shift_flag: signal_copy = ifftshift(signal_copy)
+
+    components = [signal_copy[k]*np.exp(2j*np.pi*k*time_arr/signal_len) \
+                    for k in range(signal_len) if signal_copy[k]!= 0]
+    return np.vstack(components).sum(axis=0)/signal_len
+
 
 #%%
 if __name__ == '__main__':
 
-    # Load smart meters information
-    sm_info_file = '..//Data//informations_households.csv'
-    df_sm_info = pd.read_csv(sm_info_file, header=0)
+    # # Load smart meters information
+    # sm_info_file = '..//Data//informations_households.csv'
+    # df_sm_info = pd.read_csv(sm_info_file, header=0)
 
-    # Load weather data
-    weather_daily_file = '..//Data//weather_daily_darksky.csv'
+    # # Load weather data
+    # weather_daily_file = '..//Data//weather_daily_darksky.csv'
+    # df_weather = pd.read_csv(weather_daily_file, header=0)
+    # df_weather['time'] = pd.to_datetime(df_weather['time'])
+    # df_weather = df_weather.set_index('time')
+
+    # # Load all data
+    # df_complete = read_acorn_group_blocks()
+
+    # # Remove ToU SMs and split it into accorns
+    # dict_data = split_into_acorns(df_complete, df_sm_info)
+
+    # # Generate images
+    # plot_std_or_tou_difference(df_sm_info, 
+    #                            save_filename='Diff_Tarifas.png')
+
+    # plot_total_energy_per_acorn(
+    #     dict_data, 
+    #     lst_acorn_names=['Affluent', 'Comfortable', 'Adversity', 'ACORN-U'],
+    #     save_filename='Energia_Total_por_Acorn.png')
+
+    # plot_total_relative_energy_per_acorn(
+    #     dict_data, 
+    #     lst_acorn_names=['Affluent', 'Comfortable','Adversity', 'ACORN-U'],
+    #     save_filename='Energia_Relativa_Total_por_Acorn.png')
+    
+    # for weather_col in df_weather.columns:
+    #     print(weather_col)
+    #     if 'time' in weather_col.lower() or 'summary' in weather_col.lower():
+    #         continue
+    #     correlate_energy_weather_data(
+    #         dict_data,
+    #         lst_acorn_names=['Affluent', 'Comfortable', 'Adversity'],
+    #         df_weather=df_weather,
+    #         weather_col=weather_col,
+    #         save_filename='Relação_Consumo_X_{}.png'.format(weather_col),
+    #         figsize=(10,6)
+    #     )
+
+    #  # Load weather hourly data
+    # weather_daily_file = '..//..//Data//weather_hourly_darksky.csv'
+    # df_weather = pd.read_csv(weather_daily_file, header=0)
+    # df_weather['time'] = pd.to_datetime(df_weather['time'])
+    # df_weather = df_weather.set_index('time')
+    
+    # display(df_weather['temperature'].head())
+    # rolling_size = 24*7
+    # print('Rolling size: ', rolling_size/24, ' days.')
+    # plt.plot(df_weather['temperature'].sort_index().rolling(rolling_size).mean()[::rolling_size])
+    # plt.figure()
+    # fft = plot_fourier_trsnfd_weather_data(df_weather['temperature'].sort_index().rolling(rolling_size).mean()[::rolling_size].dropna())
+    
+    # Load weather daily data
+    weather_daily_file = '..//..//Data//weather_hourly_darksky.csv'
+    desired_col = 'temperature'
     df_weather = pd.read_csv(weather_daily_file, header=0)
     df_weather['time'] = pd.to_datetime(df_weather['time'])
     df_weather = df_weather.set_index('time')
-
-    # Load all data
-    df_complete = read_acorn_group_blocks()
-
-    # Remove ToU SMs and split it into accorns
-    dict_data = split_into_acorns(df_complete, df_sm_info)
-
-    # Generate images
-    plot_std_or_tou_difference(df_sm_info, 
-                               save_filename='Diff_Tarifas.png')
-
-    plot_total_energy_per_acorn(
-        dict_data, 
-        lst_acorn_names=['Affluent', 'Comfortable', 'Adversity', 'ACORN-U'],
-        save_filename='Energia_Total_por_Acorn.png')
-
-    plot_total_relative_energy_per_acorn(
-        dict_data, 
-        lst_acorn_names=['Affluent', 'Comfortable','Adversity', 'ACORN-U'],
-        save_filename='Energia_Relativa_Total_por_Acorn.png')
+    thrs = 150
     
-    for weather_col in df_weather.columns:
-        print(weather_col)
-        if 'time' in weather_col.lower() or 'summary' in weather_col.lower():
-            continue
-        correlate_energy_weather_data(
-            dict_data,
-            lst_acorn_names=['Affluent', 'Comfortable', 'Adversity'],
-            df_weather=df_weather,
-            weather_col=weather_col,
-            save_filename='Relação_Consumo_X_{}.png'.format(weather_col),
-            figsize=(10,6)
-        )
+    display(df_weather[desired_col].head())
+    rolling_size = 24*7
+    weather_data = df_weather[desired_col].sort_index().rolling(rolling_size).\
+                    mean()[::rolling_size].dropna()
+
+    print('Rolling size: ', rolling_size, ' days.')
+    # Plot weather signal FFT
+    plt.figure(figsize=(10,6))
+    fft_signal = plot_fourier_trsnfd_weather_data(weather_data.values,
+                                                  rolling_size)
+    xlim = np.arange(plt.gca().get_xlim()[0],plt.gca().get_xlim()[1])
+    plt.plot(xlim, [thrs]*xlim.size)
+    # plt.gca().set_ylim((0, 500))
+    # Plot original data
+    plt.figure(figsize=(10,6))
+    plt.plot(weather_data)
+    plt.plot(df_weather[desired_col].sort_index().rolling(rolling_size).mean(),
+             color='indianred', alpha=.7)
+    plt.plot(df_weather[desired_col].sort_index(), color='cornflowerblue', 
+             alpha=.2)
+    # Get signal with filtered frequencies
+    fft_signal2 = fft_signal.copy()
+    fft_signal2[fft_signal <= thrs] = 0
+    plt.figure(figsize=(10,6))
+    plt.plot(ifft(ifftshift(fft_signal2)),color='cornflowerblue')
+
+    #TODO:  fazer uma função que mapeie a data de determinando sample com 
+    #       a semana em que ele se encontra. Pois com a função desenvolvida
+    #       hoje, já temos como obter a senoide que mais se aproxima em 
+    #       questão de periodicidade da temperatura. E quando passamos os
+    #       a semana correta, a função retorna o valor imediato também.
+    
+    #       Um detalhe é que a magnitude da função não está igual àquela 
+    #       mostrada pelo sinal real, visto que filtramos varias outras
+    #       frequências. Mas como vamos normalizar este dado, então não 
+    #       teremos problema com isso.
+
+    #       OBS.: Abandonou-se a ideia de pegar a média sem pular valores
+    #       (window_step), o que é mostrado como a linha vermelha na segunda
+    #       imagem, pois os resultados obtidos pela filtragem de frequências
+    #       não foi nem um pouco satisfatório, quando comparado ao obtido
+    #       pela linha azul. Isso acontece provavelmente porque ainda há
+    #       um sinal muito ruidoso.
+
+
+    # _, ax = plt.subplots(figsize=(10,8))
+    # ax.plot(df_weather['temperature'].sort_index())
+
+    # # Create senoid
+    # temp = np.array(df_weather.index)
+
+    # T_day = (temp[1] - temp[0]) * 24
+    # f_day = 1. / float(T_day)
+
+    # T_year = T_day * 365.2524
+    # f_year = 1. / float(T_year)
+
+    # sin_year = np.sin(2*np.pi*f_year * temp.astype(float))
+    # cos_year = np.cos(2*np.pi*f_year * temp.astype(float))
+
+    # ax.plot(sin_year, color='indianred')
+    # ax.plot(cos_year, color='mediumseagreen')

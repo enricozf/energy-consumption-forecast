@@ -9,9 +9,7 @@ from utils.exploratory_data_analysis import (read_acorn_group_blocks,
                                              correlate_energy_weather_data,
                                              plot_fourier_trsnfd_weather_data) 
 
-#%%
-if __name__ == '__main_':
-
+def save_energy_group_figs():
     # Load smart meters information
     sm_info_file = '..//Data//informations_households.csv'
     df_sm_info = pd.read_csv(sm_info_file, header=0)
@@ -41,6 +39,23 @@ if __name__ == '__main_':
         dict_data, 
         lst_acorn_names=['Affluent', 'Comfortable','Adversity', 'ACORN-U'],
         save_filename='Energia_Relativa_Total_por_Acorn.png')
+
+def save_energy_weather_figs():
+    # Load smart meters information
+    sm_info_file = '..//Data//informations_households.csv'
+    df_sm_info = pd.read_csv(sm_info_file, header=0)
+
+    # Load weather data
+    weather_daily_file = '..//Data//weather_daily_darksky.csv'
+    df_weather = pd.read_csv(weather_daily_file, header=0)
+    df_weather['time'] = pd.to_datetime(df_weather['time'])
+    df_weather = df_weather.set_index('time')
+
+    # Load all data
+    df_complete = read_acorn_group_blocks()
+
+    # Remove ToU SMs and split it into accorns
+    dict_data = split_into_acorns(df_complete, df_sm_info)
     
     for weather_col in df_weather.columns:
         print(weather_col)
@@ -55,13 +70,17 @@ if __name__ == '__main_':
             figsize=(10,6)
         )
 
+def represent_temperature_fft():
+    pass
+
 if __name__ == '__main__':
     hourly_data_file = '..//Data//weather_hourly_darksky.csv'
-    df_weather = pd.read_csv(hourly_data_file, usecols=['time','temperature'])
+    df_weather = pd.read_csv(hourly_data_file)
+                            #  usecols=['time','temperatureMax','temperatureMin','temperatureHigh','apparentTemperatureMax','uvIndex',])
 
     df_weather['time'] = pd.to_datetime(df_weather['time'])
-    df_weather = df_weather.set_index('time')['temperature']
+    df_temp = df_weather.set_index('time')['temperature']
     
-    display(df_weather.head())
+    display(df_temp.head())
 
-    fft = plot_fourier_trsnfd_weather_data(df_weather)
+    fft = plot_fourier_trsnfd_weather_data(df_temp.rolling(24*7).mean())

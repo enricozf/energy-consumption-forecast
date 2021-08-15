@@ -58,7 +58,8 @@ def bar_plot(
     classes : list,
     colors : list,
     xlabel : str,
-    ylabel : str):
+    ylabel : str,
+    **kwargs):
 
     ax.barh(y=range(len(classes)), width=values, 
            tick_label=classes,
@@ -67,7 +68,8 @@ def bar_plot(
     ax.set_ylabel(ylabel)
     handles = [plt.Rectangle((0,0), 1, 1, color=c) for c in colors]
     lgd = ax.legend(handles=handles, labels=classes, 
-                    bbox_to_anchor=[1.01, 1], loc=2, title='Legenda')
+                    bbox_to_anchor=[1.01, 1], loc=2, title='Legenda',
+                    **kwargs)
     return lgd
 
 def plot_std_or_tou_difference(
@@ -75,6 +77,7 @@ def plot_std_or_tou_difference(
     stdortou_col = 'stdorToU',
     save_path : str = '..//Figures//',
     save_filename : str = None,
+    fontsize=10,
     **kwargs):
     # Create figure and axis
     fig, ax = plt.subplots(**kwargs)
@@ -96,7 +99,8 @@ def plot_std_or_tou_difference(
                    classes=list(dict_diff.keys()), 
                    colors=colors, 
                    ylabel='Tipo de tarifa do medidor',
-                   xlabel='Número de medidores')
+                   xlabel='Número de medidores',
+                   title_fontsize=fontsize, prop={'size' : fontsize})
 
     if save_filename:
         save_filename = path.normpath(path.join(save_path, save_filename))
@@ -110,6 +114,7 @@ def plot_total_energy_per_acorn(
     sum_col : str = 'energy_sum',
     save_path : str = '..//Figures//',
     save_filename : str = None,
+    fontsize=10,
     **kwargs):
     # Create figure and axis
     fig, ax = plt.subplots(**kwargs)
@@ -131,7 +136,8 @@ def plot_total_energy_per_acorn(
     lgd = bar_plot(ax, values=total_per_acorn, classes=lst_acorn_names, 
                    colors=colors, 
                    ylabel='Acorns da pesquisa',
-                   xlabel='Consumo Energético [kWh]')
+                   xlabel='Consumo Energético [kWh]',
+                   title_fontsize=fontsize, prop={'size' : fontsize})
 
     if save_filename:
         save_filename = path.normpath(path.join(save_path, save_filename))
@@ -146,6 +152,7 @@ def plot_total_relative_energy_per_acorn(
     count_col :str = 'energy_count',
     save_path : str = '..//Figures//',
     save_filename : str = None,
+    fontsize=10,
     **kwargs):
     # Create figure and axis
     fig, ax = plt.subplots(**kwargs)
@@ -168,7 +175,8 @@ def plot_total_relative_energy_per_acorn(
     lgd = bar_plot(ax, values=relative_total_per_acorn, classes=lst_acorn_names, 
                    colors=colors, 
                    ylabel='Acorns da pesquisa',
-                   xlabel='Consumo Energético Relativo [kWh/(número medições)]')
+                   xlabel='Consumo Energético Relativo [kWh/(número medições)]',
+                   title_fontsize=fontsize, prop={'size' : fontsize})
 
     if save_filename:
         save_filename = path.normpath(path.join(save_path, save_filename))
@@ -187,6 +195,7 @@ def correlate_energy_weather_data(
     save_path : str = '..//Figures//',
     save_filename : str = None,
     invert_weather_curve : bool = False,
+    fontsize=10,
     **kwargs):
     # Create figure and axis
     fig, ax = plt.subplots(**kwargs)
@@ -228,7 +237,118 @@ def correlate_energy_weather_data(
     handles = [plt.Rectangle((0,0), 1, 1, color=c) for c in \
                                 colors+[GRAPHIC_COLORS.get('weather')]]
     lgd = ax.legend(handles=handles, labels=lst_acorn_names+[weather_col], 
-              bbox_to_anchor=[1.05, 1], loc=2, title='Acorns da pesquisa')
+              bbox_to_anchor=[1.05, 1], loc=2, title='Acorns da pesquisa',
+              title_fontsize=fontsize, prop={'size' : fontsize})
+
+    if save_filename:
+        save_filename = path.normpath(path.join(save_path, save_filename))
+        plt.savefig(save_filename, bbox_extra_artist=(lgd,), bbox_inches='tight')
+    else:
+        return fig, ax
+    
+def scatter_temperature_consumption(
+    temperature_file_path : str ='..//Data//weather_daily_darksky.csv',
+    consumption_file_path : str ='..//Data//daily_dataset',
+    sm_info_file : str = '..//Data//informations_households.csv',
+    lst_acorn_names : str = ['Affluent', 'Comfortable', 'Adversity'],
+    sum_col : str = 'energy_sum',
+    count_col : str = 'energy_count',
+    day_col : str = 'day',
+    weather_col : str ='temperatureMax',
+    save_filename : str =None,
+    save_path : str = '..//Figures//',
+    fontsize=10):
+    
+    # Read all Smart meters data
+    dict_data = read_acorn_group_blocks(consumption_file_path)
+    # Load smart meters information
+    df_sm_info = pd.read_csv(sm_info_file, header=0)
+    # Split into acorns
+    dict_data = split_into_acorns(dict_data, df_sm_info)
+
+    acorn_data = {
+        acorn : dict_data[acorn][sum_col].groupby(day_col).sum() / \
+                dict_data[acorn][count_col].groupby(day_col).sum() \
+                    for acorn in lst_acorn_names
+    }
+    # Read weather temperature data
+    weather_data = pd.read_csv(temperature_file_path, header=0, index_col='time')
+    weather_data = weather_data[weather_col].sort_index()
+    weather_data.index = pd.to_datetime(weather_data.index)
+
+    earlier_data_day = max([acorn_data[a].index.min()] for a in lst_acorn_names)
+    earlier_data_day = earlier_data_day[0]
+    later_data_day = min([acorn_data[a].index.max()] for a in lst_acorn_names)
+    later_data_day = later_data_day[0]
+
+    # Truncate data
+    weather_data = weather_data.loc[str(earlier_data_day):str(later_data_day)]
+
+    # Plotting data
+    fig, ax = plt.subplots(figsize=(10,6))
+    colors = []
+    for a in lst_acorn_names:
+        acorn_data[a] = acorn_data[a].loc[earlier_data_day:later_data_day]
+        ax.scatter(1*weather_data, acorn_data[a].sort_index(), 
+                   cmap=GRAPHIC_COLORS[a])
+        colors.append(GRAPHIC_COLORS.get(a))
+    
+    handles = [plt.Rectangle((0,0), 1, 1, color=c) for c in colors]
+    lgd = ax.legend(handles=handles, labels=lst_acorn_names, 
+              bbox_to_anchor=[1.05, 1], loc=2, title='Acorns da pesquisa',
+              title_fontsize=fontsize, prop={'size' : fontsize})
+    ax.set_ylabel('Consumo Energético Relativo [kWh/(número medições)]')
+    ax.set_xlabel('Temperatura (°C)')
+
+    if save_filename:
+        save_filename = path.normpath(path.join(save_path, save_filename))
+        plt.savefig(save_filename, bbox_extra_artist=(lgd,), bbox_inches='tight')
+    else:
+        return fig, ax
+
+def show_week_day_consumption_diff(
+    consumption_file_path : str = '..//Data//daily_dataset',
+    sm_info_file : str = '..//Data//informations_households.csv',
+    lst_acorn_names : str = ['Affluent', 'Comfortable', 'Adversity'],
+    sum_col : str = 'energy_sum',
+    count_col : str = 'energy_count',
+    save_filename : str = None,
+    save_path : str = '..//Figures//',
+    fontsize=10):
+    
+    # Read all Smart meters data
+    df_complete = read_acorn_group_blocks(consumption_file_path)
+    df_complete['weekday'] = df_complete.reset_index()['day'].\
+                                apply(lambda x : x.weekday()).values
+    # Load smart meters information
+    df_sm_info = pd.read_csv(sm_info_file, header=0)
+    # Split into acorns
+    dict_data = split_into_acorns(df_complete, df_sm_info)
+
+    acorn_data = {
+        acorn : dict_data[acorn].groupby('weekday')[sum_col].sum() / \
+                dict_data[acorn].groupby('weekday')[count_col].sum() \
+                    for acorn in lst_acorn_names
+    }
+    
+    fig, ax = plt.subplots(figsize=(10,6))
+    bottom = np.zeros(len(acorn_data[lst_acorn_names[0]]))
+    idx = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+    colors = []
+    for acorn in lst_acorn_names:
+        acorn_data[acorn] = acorn_data[acorn].sort_index()
+        ax.bar(idx, acorn_data[acorn], bottom=bottom,
+                color=GRAPHIC_COLORS[acorn], label=acorn)
+        bottom += acorn_data[acorn]
+        colors.append(GRAPHIC_COLORS.get(acorn))
+    
+    handles = [plt.Rectangle((0,0), 1, 1, color=c) for c in colors]
+    lgd = ax.legend(handles=handles, labels=lst_acorn_names, 
+              bbox_to_anchor=[1.05, 1], loc=2, title='Acorns da pesquisa',
+              title_fontsize=fontsize, prop={'size' : fontsize})
+    ax.set_ylabel('Consumo Energético Relativo [kWh/(número medições)]',
+                  fontsize=fontsize)
+    ax.set_xlabel('Dias da semana', fontsize=fontsize)
 
     if save_filename:
         save_filename = path.normpath(path.join(save_path, save_filename))
@@ -243,12 +363,11 @@ def find_closest_2base_power(target):
 
     return 2**expoent
 
-#TODO: Rodar média movel sobre dados e deis fazer a fft
 def plot_fourier_trsnfd_weather_data(sr_weather : pd.Series, r_size : int):
     
     # fft = rfft(sr_weather)
-    fft_signal = fftshift(fft(sr_weather,
-                              find_closest_2base_power(sr_weather.size)))
+    fft_signal = fftshift(fft(sr_weather))
+                            #   find_closest_2base_power(sr_weather.size)))
     f_per_dataset = np.arange(0, len(fft_signal))
 
     # Get number of half hour samples
@@ -278,6 +397,88 @@ def restore_fft_signal(
                     for k in range(signal_len) if signal_copy[k]!= 0]
     return np.vstack(components).sum(axis=0)/signal_len
 
+def represent_temperature_fft(
+    weather_daily_file = '..//Data//weather_hourly_darksky.csv',
+    desired_col = 'temperature',
+    time_col = 'time',
+    save_original_filename=None,
+    save_representation_filename=None,
+    save_path='..//Figures//',
+    fontsize='10'):
+    # Load weather daily data
+    df_weather = pd.read_csv(weather_daily_file, header=0)
+    df_weather[time_col] = pd.to_datetime(df_weather[time_col])
+    df_weather = df_weather.set_index(time_col)
+    thrs = 80
+    
+    # Get weekly mean values
+    # display(df_weather[desired_col].head())
+    rolling_size = 24*7
+    weather_data = df_weather[desired_col].sort_index().rolling(rolling_size).\
+                    mean()[::rolling_size].dropna()
+    print('Rolling size: ', rolling_size, ' days.')
+
+    # Plot weather signal in frequency domain
+    plt.figure(figsize=(10,6))
+    fft_signal = plot_fourier_trsnfd_weather_data(weather_data.values,
+                                                  rolling_size)
+    xlim = np.arange(plt.gca().get_xlim()[0],plt.gca().get_xlim()[1])
+    plt.plot(xlim, [thrs]*xlim.size) # plot threshold
+    # plt.gca().set_ylim((0, 500))
+
+    # Plot original data
+    _, ax = plt.subplots(figsize=(10,6))
+    ax.plot(weather_data, 
+            label='Média semanal amostrada') # Weekly mean data with step / strides
+    ax.plot(df_weather[desired_col].sort_index().rolling(rolling_size).mean(),
+             color='indianred', alpha=.7,
+             label='Média semanal') # Weekly mean data
+    ax.plot(df_weather[desired_col].sort_index(), color='cornflowerblue', 
+             alpha=.2, label='Dados originais') # Original data
+    ax.set_ylabel('Temperatura (°C)', fontsize=fontsize)
+    ax.set_xlabel('Data', fontsize=fontsize)
+    lgd = ax.legend( 
+              bbox_to_anchor=[1.05, 1], loc=2, title_fontsize=fontsize,
+              title='Descrição curvas', prop={'size':fontsize}
+              )
+    
+    if save_original_filename:
+        save_filename = path.normpath(path.join(save_path, save_original_filename))
+        plt.savefig(save_filename, bbox_extra_artist=(lgd,), bbox_inches='tight')
+
+    # Get signal with filtered frequencies
+    fft_signal2 = fft_signal.copy()
+    fft_signal2[np.abs(fft_signal) <= thrs] = 0
+    _, ax = plt.subplots(figsize=(10,6))
+    # plt.plot(ifft(ifftshift(fft_signal2)),color='cornflowerblue')
+    # Highly filtered signal
+    ax.plot(
+        ifft(ifftshift(np.where(np.abs(fft_signal)>150, fft_signal, 0))),
+        color='mediumseagreen', label='150'
+    )
+    # Best filtered signal
+    ax.plot(
+        ifft(ifftshift(np.where(np.abs(fft_signal)>thrs, fft_signal, 0))),
+        color='cornflowerblue', label=str(thrs)
+    )
+    # Poorly filtered signal
+    ax.plot(
+        ifft(ifftshift(np.where(np.abs(fft_signal)>50, fft_signal, 0))),
+        color='indianred', label='50'
+    )
+    ax.set_ylabel('Temperatura (°C)', fontsize=fontsize)
+    ax.set_xlabel('Número de semanas', fontsize=fontsize)
+    lgd = ax.legend( 
+              bbox_to_anchor=[1.05, 1], loc=2, title_fontsize=fontsize,
+              title='Limiares de frequência', prop={'size':fontsize}
+              )
+    
+    if save_representation_filename:
+        save_filename = path.normpath(path.join(
+            save_path, save_representation_filename))
+        plt.savefig(save_filename, bbox_extra_artist=(lgd,), bbox_inches='tight')
+
+
 
 #%%
 if __name__ == '__main__':
@@ -293,7 +494,7 @@ if __name__ == '__main__':
     # df_weather = df_weather.set_index('time')
 
     # # Load all data
-    # df_complete = read_acorn_group_blocks()
+    df_complete = read_acorn_group_blocks()
 
     # # Remove ToU SMs and split it into accorns
     # dict_data = split_into_acorns(df_complete, df_sm_info)
@@ -344,7 +545,7 @@ if __name__ == '__main__':
     df_weather = pd.read_csv(weather_daily_file, header=0)
     df_weather['time'] = pd.to_datetime(df_weather['time'])
     df_weather = df_weather.set_index('time')
-    thrs = 150
+    thrs = 80
     
     display(df_weather[desired_col].head())
     rolling_size = 24*7
@@ -368,9 +569,34 @@ if __name__ == '__main__':
              alpha=.2)
     # Get signal with filtered frequencies
     fft_signal2 = fft_signal.copy()
-    fft_signal2[fft_signal <= thrs] = 0
+    fft_signal2[np.abs(fft_signal) <= thrs] = 0
     plt.figure(figsize=(10,6))
-    plt.plot(ifft(ifftshift(fft_signal2)),color='cornflowerblue')
+    # plt.plot(ifft(ifftshift(fft_signal2)),color='cornflowerblue')
+    plt.plot(
+        ifft(ifftshift(np.where(np.abs(fft_signal)>150, fft_signal, 0))),
+        color='mediumseagreen', label='150'
+    )
+    plt.plot(
+        ifft(ifftshift(np.where(np.abs(fft_signal)>80, fft_signal, 0))),
+        color='cornflowerblue', label='80'
+    )
+    plt.plot(
+        ifft(ifftshift(np.where(np.abs(fft_signal)>50, fft_signal, 0))),
+        color='indianred', label='50'
+    )
+    plt.gca().legend()
+
+    # # Deal with residual temp data
+    # residual = weather_data.values - ifft(ifftshift(fft_signal2))
+    # plt.figure(figsize=(10,6))
+    # residual_fft = plot_fourier_trsnfd_weather_data(residual,
+    #                                                 rolling_size)
+    # residual_fft2 = residual_fft.copy()
+    # residual_fft2[np.abs(residual_fft) <= thrs] = 0
+    # plt.figure(figsize=(10,6))
+    # plt.plot(ifft(ifftshift(residual_fft2)),color='cornflowerblue')
+
+
 
     #TODO:  fazer uma função que mapeie a data de determinando sample com 
     #       a semana em que ele se encontra. Pois com a função desenvolvida

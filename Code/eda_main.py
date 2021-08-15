@@ -7,7 +7,10 @@ from utils.exploratory_data_analysis import (read_acorn_group_blocks,
                                              plot_total_energy_per_acorn,
                                              plot_total_relative_energy_per_acorn,
                                              correlate_energy_weather_data,
-                                             plot_fourier_trsnfd_weather_data) 
+                                             plot_fourier_trsnfd_weather_data,
+                                             represent_temperature_fft,
+                                             scatter_temperature_consumption,
+                                             show_week_day_consumption_diff) 
 
 def save_energy_group_figs():
     # Load smart meters information
@@ -70,17 +73,19 @@ def save_energy_weather_figs():
             figsize=(10,6)
         )
 
-def represent_temperature_fft():
-    pass
-
 if __name__ == '__main__':
-    hourly_data_file = '..//Data//weather_hourly_darksky.csv'
-    df_weather = pd.read_csv(hourly_data_file)
-                            #  usecols=['time','temperatureMax','temperatureMin','temperatureHigh','apparentTemperatureMax','uvIndex',])
-
-    df_weather['time'] = pd.to_datetime(df_weather['time'])
-    df_temp = df_weather.set_index('time')['temperature']
     
-    display(df_temp.head())
+    data_path = '..//Data//halfhourly_dataset//block_0.csv'
+    df_block_hh = pd.read_csv(data_path, header=0)
 
-    fft = plot_fourier_trsnfd_weather_data(df_temp.rolling(24*7).mean())
+    data_path = '..//Data//daily_dataset//block_0.csv'
+    df_block_day = pd.read_csv(data_path, header=0)
+    
+    data_path = '..//Data//uk_bank_holidays.csv'
+    df_holiday = pd.read_csv(data_path, header=0)
+    
+    data_path = '..//Data//weather_hourly_darksky.csv'
+    df_weather_h = pd.read_csv(data_path, header=0)
+    
+    data_path = '..//Data//weather_DAILY_darksky.csv'
+    df_weather_day = pd.read_csv(data_path, header=0)

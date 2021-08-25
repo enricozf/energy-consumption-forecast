@@ -10,7 +10,8 @@ from utils.exploratory_data_analysis import (read_acorn_group_blocks,
                                              plot_fourier_trsnfd_weather_data,
                                              represent_temperature_fft,
                                              scatter_temperature_consumption,
-                                             show_week_day_consumption_diff) 
+                                             show_week_day_consumption_diff,
+                                             insert_representation_in_csv) 
 
 def save_energy_group_figs():
     # Load smart meters information
@@ -73,19 +74,22 @@ def save_energy_weather_figs():
             figsize=(10,6)
         )
 
+#%%
 if __name__ == '__main__':
     
-    data_path = '..//Data//halfhourly_dataset//block_0.csv'
-    df_block_hh = pd.read_csv(data_path, header=0)
+    insert_representation_in_csv(desired_col='temperature')
+    # data_path = '..//Data//halfhourly_dataset//block_0.csv'
+    # df_block_hh = pd.read_csv(data_path, header=0)
 
-    data_path = '..//Data//daily_dataset//block_0.csv'
-    df_block_day = pd.read_csv(data_path, header=0)
+    # data_path = '..//Data//daily_dataset//block_0.csv'
+    # df_block_day = pd.read_csv(data_path, header=0)
     
-    data_path = '..//Data//uk_bank_holidays.csv'
-    df_holiday = pd.read_csv(data_path, header=0)
+    # data_path = '..//Data//uk_bank_holidays.csv'
+    # df_holiday = pd.read_csv(data_path, header=0)
     
-    data_path = '..//Data//weather_hourly_darksky.csv'
-    df_weather_h = pd.read_csv(data_path, header=0)
+    # data_path = '..//Data//weather_hourly_darksky.csv'
+    # df_weather_h = pd.read_csv(data_path, header=0)
     
-    data_path = '..//Data//weather_DAILY_darksky.csv'
-    df_weather_day = pd.read_csv(data_path, header=0)
+    # data_path = '..//Data//weather_DAILY_darksky.csv'
+    # df_weather_day = pd.read_csv(data_path, header=0)
+# %%

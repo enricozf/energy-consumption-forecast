@@ -401,6 +401,7 @@ def represent_temperature_fft(
     weather_daily_file = '..//Data//weather_hourly_darksky.csv',
     desired_col = 'temperature',
     time_col = 'time',
+    thrs=80,
     save_original_filename=None,
     save_representation_filename=None,
     save_path='..//Figures//',
@@ -409,7 +410,6 @@ def represent_temperature_fft(
     df_weather = pd.read_csv(weather_daily_file, header=0)
     df_weather[time_col] = pd.to_datetime(df_weather[time_col])
     df_weather = df_weather.set_index(time_col)
-    thrs = 80
     
     # Get weekly mean values
     # display(df_weather[desired_col].head())
@@ -478,7 +478,40 @@ def represent_temperature_fft(
             save_path, save_representation_filename))
         plt.savefig(save_filename, bbox_extra_artist=(lgd,), bbox_inches='tight')
 
+def correlate_weeks(elem, first_week=44, first_year=2011):
+    week, year = elem.week, elem.year
+    return week - first_week + (year - first_year)*52
 
+def insert_representation_in_csv(
+    weather_daily_file = '..//Data//weather_hourly_darksky.csv',
+    desired_col = 'temperature',
+    time_col = 'time',
+    thrs = 80):
+    # Load weather daily data
+    df_weather = pd.read_csv(weather_daily_file, header=0)
+    df_weather[time_col] = pd.to_datetime(df_weather[time_col])
+    df_weather = df_weather.set_index(time_col)
+    df_weather.sort_index(inplace=True)
+    
+    # Get weekly mean values
+    rolling_size = 24*7
+    weather_data = df_weather[desired_col].rolling(rolling_size).\
+                    mean()[::rolling_size].dropna()
+
+    fft_signal = fftshift(fft(weather_data.values))
+
+    # Get signal with filtered frequencies
+    fft_signal_cropped = np.where(np.abs(fft_signal)>thrs, fft_signal, 0)
+    x_t = df_weather.reset_index()[time_col].apply(correlate_weeks)
+
+    # Insert common 
+    new_col = 'weekly_{}'.format(desired_col)
+    df_weather[new_col] = np.real(restore_fft_signal(fft_signal_cropped, x_t))
+
+    df_weather.reset_index(inplace=True)
+
+    new_file_name = weather_daily_file.replace('.csv', '_final.csv')
+    df_weather.to_csv(new_file_name)
 
 #%%
 if __name__ == '__main__':

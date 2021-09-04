@@ -39,17 +39,17 @@ def monday_or_weekend(elem):
     return 1 if elem.weekday() in [0,5,6] else 0
 
 def create_complete_df(
-    block_file_name:str = '..//Data//halfhourly_dataset//block_0.csv',
+    desired_acorn_name : str = 'Affluent',
     weather_file_name:str = '..//Data//weather_hourly_darksky_final.csv',
     time_col_data:str = 'tstp',
     time_col_weather:str = 'time',
     desired_weather_cols:list = ['apparentTemperature', 'weekly_temperature'],
-    save_df_path:bool = True,
-    num_folds:int = 0): #uvIndex
+    save_df_flag:bool = True,
+    save_df_path = '..//Data//acorn_{}_final_data.csv'): #uvIndex
     
     # TODO: Merge + fill NaN
-    df = create_df()
-    df.head()
+    df = create_df(desired_acorn_name=desired_acorn_name)
+    # df.head()
     print('Shape: ', df.shape)
     df[time_col_data] = pd.to_datetime(df[time_col_data])
     df['MondayORWE'] = df[time_col_data].apply(monday_or_weekend)
@@ -73,10 +73,10 @@ def create_complete_df(
                       pd.DataFrame(weather_sr).rename(columns={0:w_col}),
                       how='inner', left_index=True, right_index=True)
     
+    # Saving final data in file
     df.reset_index(inplace=True)
-    if save_df_path:
-        df.to_csv('..//Data//final_data.csv', index=False)
-
+    if save_df_flag:
+        df.to_csv(save_df_path.format(desired_acorn_name), index=False)
 
     return df
 
@@ -125,18 +125,12 @@ def gen_dataset_obj(
 
     return dataset
 
-def gen_dataset(
+def gen_dataset_split(
     df: pd.DataFrame,
     dic_folds: dict,
     fold: str = '0',
     fold_split: str = 'train',
     **kwargs):
-    # # Verify sequence_length is in passed arguments
-    # sequence_length = kwargs.get('sequence_length')
-    # try:
-    #     assert sequence_length
-    # except AssertionError:
-    #     raise ValueError("Missing 'sequence_length' parameter.")
 
     lst_sms = dic_folds[fold][fold_split].copy()
     print('Tamanho lista de sms: ', len(lst_sms))
@@ -149,36 +143,68 @@ def gen_dataset(
     # TODO: Nem o dataset nem o dataset_aux sao atualizados neste for. 
     #       Será um problema do MapDataset, por ser uma classe diferente?
     for sm in lst_sms:
-        df_sm = df.loc[sm].copy()
+        try:
+            df_sm = df.loc[sm].copy()
+        except KeyError:
+            print('Sm {} not found... verify on existing DF.'.format(sm))
+            continue
         # print('--- Tamanho do DF: ', df_sm.shape)
         df_sm = df_sm.set_index('tstp').sort_index().values
         dataset_aux = gen_dataset_obj(df_sm, **kwargs)
         dataset = dataset.concatenate(dataset_aux)
 
-    return dataset.shuffle(int(5e6))#.map(lambda window: (window[:, :sequence_length, :], window[:, sequence_length:, 0]))
+    return dataset.shuffle(int(5e6)).prefetch(1)
 
+def gen_dataset(
+    final_data_path: str = '..//Data//final_data.csv',
+    fold_json_path: str = '..//Data//folds.json',
+    fold: str = '0',
+    fold_splits: list = ['train', 'val', 'test'],
+    lcl_id_col: str = 'LCLid',
+    time_col: str = 'tstp',
+    **kwargs):
+    
+    # Read data csv file
+    df = pd.read_csv(final_data_path)
+
+    # Read json file
+    with open(fold_json_path, 'r') as f:
+        dic_folds = load(f)
+
+    # Sorting values and changing df index
+    df.sort_values([lcl_id_col,time_col],inplace=True)
+    df.set_index(lcl_id_col, inplace=True)
+
+    # Generate train, validation and test datasets
+    dic_splits = {}
+    for split in fold_splits:
+        dic_splits[split] = gen_dataset_split(
+            df, dic_folds, fold=fold, fold_split=split, **kwargs)
+
+    return dic_splits
 
 if __name__ == '__main__':
     final_data_path = '..//Data//final_data.csv'
     fold_json_path = '..//Data//folds.json'
-    desired_fold = '0'
-    # TODO: Splitar os dados em input e target
-    df = pd.read_csv(final_data_path)
-    # df.drop('Unnamed: 0', axis=1, inplace=True)
+    create_complete_df()
+    # desired_fold = '0'
+    # dic_splits = gen_dataset(final_data_path, fold_json_path)
+#     df = pd.read_csv(final_data_path)
+#     # df.drop('Unnamed: 0', axis=1, inplace=True)
 
-    with open(fold_json_path, 'r') as f:
-        dic_folds = load(f)
+#     with open(fold_json_path, 'r') as f:
+#         dic_folds = load(f)
 
-# AQUI
-    df.sort_values(['LCLid','tstp'],inplace=True)
-    df.set_index('LCLid', inplace=True)
-    # df_test = df.loc[dic_folds['0']['train'][0]]
-    # df_test_test = df_test.head(100)
-    # df_values = df_test_test.reset_index().drop('LCLid',axis=1).set_index('tstp').values
+# # AQUI
+#     df.sort_values(['LCLid','tstp'],inplace=True)
+#     df.set_index('LCLid', inplace=True)
+#     # df_test = df.loc[dic_folds['0']['train'][0]]
+#     # df_test_test = df_test.head(100)
+#     # df_values = df_test_test.reset_index().drop('LCLid',axis=1).set_index('tstp').values
 
-    dataset = gen_dataset(df, dic_folds, fold_split='test')
-    # lst_lcl_ids = list(df['LCLid'].unique())
-    # separate_sm_in_folds(lst_lcl_ids, fold_json_path)
+#     dataset = gen_dataset(df, dic_folds, fold_split='test')
+#     # lst_lcl_ids = list(df['LCLid'].unique())
+#     # separate_sm_in_folds(lst_lcl_ids, fold_json_path)
     # TODO: Splitar os dados em treino teste
     # TODO: Alimentar e treinar modelo
 

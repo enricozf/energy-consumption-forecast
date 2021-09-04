@@ -4,6 +4,7 @@ from numpy import ndarray
 from json import dump, load
 from numpy.random import shuffle
 from os.path import normpath, join
+from scipy.stats import boxcox
 import tensorflow as tf
 from tensorflow.python.ops.control_flow_ops import Assert
 from utils.exploratory_data_analysis import (read_acorn_group_blocks, 
@@ -107,9 +108,64 @@ def separate_sm_in_folds(
                 folds_json[fold]['train'].extend(dic_folds[fold_group])
 
     with open(fold_json_path, 'w') as f:
-        dump(folds_json, f)
+        dump(folds_json, f, indent=4)
 
     # return folds_json
+
+def standardize_weekly_temp(temp):
+    """
+    DOCSTRING:
+    Function to standardize artificial weekly temperature feature. Values
+    obtained by empirical observation of temperature value.
+    """
+    return -1 * (temp - 10) / 10
+
+def pre_processing(
+    data_path: str = '..//Data//acorn_{}_final_data.csv',
+    fold_json_path: str = '..//Data//folds.json',
+    desired_acorn_name : str = 'Affluent',
+    lcl_id_col: str = 'LCLid',
+    time_col: str = 'tstp',
+    energy_col: str = 'energy(kWh/hh)',
+    weekly_temp: str = 'weekly_temperature',
+    apparent_temp: str = 'apparentTemperature',
+    save_preproc_data_path: str = '..//Data//acorn_{}_preproc_data.csv',
+    save_fold_lmbdas_path: str = '..//Data//boxcox_lmbdas_per_fold.json'):
+    print('Begin pre-processing operations.')
+
+    # Read data csv file
+    print('--- Begin reading data.')
+    df = pd.read_csv(data_path.format(desired_acorn_name))
+    df.sort_values([lcl_id_col, time_col], inplace=True)
+    df.set_index(lcl_id_col, inplace=True)
+
+    # Read json file
+    with open(fold_json_path, 'r') as f:
+        dic_folds = load(f)
+
+    print('--- Operate over temperature data.')
+    # Create temperature difference column
+    df['temp_diff'] = df[weekly_temp] - df[apparent_temp]
+    temp_diff_mean, temp_diff_std = df['temp_diff'].describe()[['mean','std']]
+    
+    # Standardize both temperature columns
+    df['temp_diff'] = -1 * (df['temp_diff'] - temp_diff_mean) / temp_diff_std
+    df[weekly_temp] = df[weekly_temp].apply(standardize_weekly_temp)
+
+    # Get boxcox lambda for every fold train dataset
+    dic_lmbdas = {}
+    for fold, dic in dic_folds.items():
+        print(f'--- Generate boxcox lambda parameter for fold {fold}')
+        train_sm_fold_lst = dic['train']
+        energy_values = df.loc[train_sm_fold_lst, energy_col].values
+        _, lmbda = boxcox(energy_values[energy_values > 0])
+        dic_lmbdas[fold] = lmbda
+
+    df.reset_index(inplace=True)
+    df.to_csv(save_preproc_data_path.format(desired_acorn_name), index=False)
+
+    with open(save_fold_lmbdas_path, 'w') as f:
+        dump(dic_lmbdas, f, indent=4)
 
 def gen_dataset_obj(
     df_values: ndarray,
@@ -183,6 +239,7 @@ def gen_dataset(
 
     return dic_splits
 
+#%%
 if __name__ == '__main__':
     final_data_path = '..//Data//final_data.csv'
     fold_json_path = '..//Data//folds.json'

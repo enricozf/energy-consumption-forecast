@@ -1,14 +1,18 @@
 #%%
 import pandas as pd
-from numpy import ndarray
+import numpy as np
 from json import dump, load
 from numpy.random import shuffle
 from os.path import normpath, join
 from scipy.stats import boxcox
+from sklearn.preprocessing import (
+    StandardScaler, RobustScaler, FunctionTransformer)
 import tensorflow as tf
 from tensorflow.python.ops.control_flow_ops import Assert
+from tensorflow.python.ops.gen_dataset_ops import generator_dataset
 from utils.exploratory_data_analysis import (read_acorn_group_blocks, 
                                              split_into_acorns)
+from utils.models import gen_dense_model_v0, compile_and_fit
 
 def create_df(
     consumption_file_path : str ='..//Data//halfhourly_dataset',
@@ -151,6 +155,7 @@ def pre_processing(
     # Standardize both temperature columns
     df['temp_diff'] = -1 * (df['temp_diff'] - temp_diff_mean) / temp_diff_std
     df[weekly_temp] = df[weekly_temp].apply(standardize_weekly_temp)
+    df.drop(apparent_temp, axis=1, inplace=True)
 
     # Get boxcox lambda for every fold train dataset
     dic_lmbdas = {}
@@ -168,14 +173,17 @@ def pre_processing(
         dump(dic_lmbdas, f, indent=4)
 
 def gen_dataset_obj(
-    df_values: ndarray,
+    df_values: np.ndarray,
     sequence_length: int = 24,
     pred_samples: int = 10,
     batch_size: int = 64):
     
     dataset = tf.data.Dataset.from_tensor_slices(df_values)
-    dataset = dataset.window(sequence_length+pred_samples, shift=1, drop_remainder=True)
-    dataset = dataset.flat_map(lambda window: window.batch(sequence_length+pred_samples))
+    dataset = dataset.window(
+        sequence_length+pred_samples, shift=1, drop_remainder=True)
+    dataset = dataset.flat_map(
+        lambda window: window.batch(sequence_length+pred_samples, 
+                                    drop_remainder=True))
     dataset = dataset.batch(batch_size, drop_remainder=True)#.shuffle(10000)
     dataset = dataset.map(lambda window: (window[:, :sequence_length, :], window[:, sequence_length:, 0]))
 
@@ -186,6 +194,8 @@ def gen_dataset_split(
     dic_folds: dict,
     fold: str = '0',
     fold_split: str = 'train',
+    time_col: str = 'tstp',
+    scaler: FunctionTransformer = None,
     **kwargs):
 
     lst_sms = dic_folds[fold][fold_split].copy()
@@ -193,11 +203,9 @@ def gen_dataset_split(
     first_sm = lst_sms.pop(0)
 
     df_sm = df.loc[first_sm].copy()
-    df_sm = df_sm.reset_index().drop('LCLid', axis=1).set_index('tstp').values
+    df_sm = df_sm.set_index(time_col).sort_index().values
     dataset = gen_dataset_obj(df_sm, **kwargs)
 
-    # TODO: Nem o dataset nem o dataset_aux sao atualizados neste for. 
-    #       Será um problema do MapDataset, por ser uma classe diferente?
     for sm in lst_sms:
         try:
             df_sm = df.loc[sm].copy()
@@ -205,37 +213,68 @@ def gen_dataset_split(
             print('Sm {} not found... verify on existing DF.'.format(sm))
             continue
         # print('--- Tamanho do DF: ', df_sm.shape)
-        df_sm = df_sm.set_index('tstp').sort_index().values
+        df_sm = df_sm.set_index(time_col).sort_index().values
         dataset_aux = gen_dataset_obj(df_sm, **kwargs)
         dataset = dataset.concatenate(dataset_aux)
 
-    return dataset.shuffle(int(5e6)).prefetch(1)
+    return dataset.shuffle(int(5e6), reshuffle_each_iteration=True).prefetch(1)
 
 def gen_dataset(
-    final_data_path: str = '..//Data//final_data.csv',
+    final_data_path: str = '..//Data//acorn_{}_preproc_data.csv',
     fold_json_path: str = '..//Data//folds.json',
+    boxcox_lmdas_path: str = '..//Data//boxcox_lmbdas_per_fold.json',
+    desired_acorn_name : str = 'Affluent',
     fold: str = '0',
     fold_splits: list = ['train', 'val', 'test'],
     lcl_id_col: str = 'LCLid',
     time_col: str = 'tstp',
+    temp_diff_col: str = 'temp_diff',
+    energy_col: str = 'energy(kWh/hh)',
+    temp_diff_thrs: float = None,
+    boxcox_trnsf_flag: bool = True,
+    scale_flg: bool = True,
     **kwargs):
     
     # Read data csv file
-    df = pd.read_csv(final_data_path)
+    df = pd.read_csv(final_data_path.format(desired_acorn_name))
 
-    # Read json file
+    # Read fold splits json file
     with open(fold_json_path, 'r') as f:
         dic_folds = load(f)
+
+    # Read boxcox transformation lambdas per fold
+    with open(boxcox_lmdas_path, 'r') as f:
+        boxcox_lmbda = load(f)[fold]
 
     # Sorting values and changing df index
     df.sort_values([lcl_id_col,time_col],inplace=True)
     df.set_index(lcl_id_col, inplace=True)
 
+    # Crop temperatures that exceed it's limits
+    if temp_diff_thrs:
+        cond = df[temp_diff_col] < temp_diff_thrs
+        df[temp_diff_col] = df[temp_diff_col].where(cond, temp_diff_thrs)
+        cond = df[temp_diff_col] > -1 * temp_diff_thrs
+        df[temp_diff_col] = df[temp_diff_col].where(cond, -1 * temp_diff_thrs)
+
+    # Apply boxcox transformation
+    if boxcox_trnsf_flag:
+        energy_values = df[energy_col].values
+        energy_values_trsnf = np.empty_like(energy_values)
+        energy_values_trsnf[energy_values > 0] = boxcox(
+            energy_values[energy_values > 0], boxcox_lmbda)
+        energy_values_trsnf[energy_values <= 0] = -1/boxcox_lmbda
+        df[energy_col] = energy_values_trsnf
+
+    # Standardize data
+
+
     # Generate train, validation and test datasets
     dic_splits = {}
     for split in fold_splits:
         dic_splits[split] = gen_dataset_split(
-            df, dic_folds, fold=fold, fold_split=split, **kwargs)
+            df, dic_folds, fold=fold, fold_split=split, 
+            time_col=time_col, **kwargs)
 
     return dic_splits
 
@@ -243,7 +282,8 @@ def gen_dataset(
 if __name__ == '__main__':
     final_data_path = '..//Data//final_data.csv'
     fold_json_path = '..//Data//folds.json'
-    create_complete_df()
+    dic_split = gen_dataset(time_col='index',
+                          boxcox_trnsf_flag=False)
     # desired_fold = '0'
     # dic_splits = gen_dataset(final_data_path, fold_json_path)
 #     df = pd.read_csv(final_data_path)
@@ -266,3 +306,4 @@ if __name__ == '__main__':
     # TODO: Alimentar e treinar modelo
 
 # %%
+print('09')

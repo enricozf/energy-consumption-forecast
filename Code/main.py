@@ -178,14 +178,17 @@ def gen_dataset_obj(
     pred_samples: int = 10,
     batch_size: int = 64):
     
-    dataset = tf.data.Dataset.from_tensor_slices(df_values)
-    dataset = dataset.window(
-        sequence_length+pred_samples, shift=1, drop_remainder=True)
+    dataset = tf.data.Dataset.from_tensor_slices(tf.convert_to_tensor(df_values))
+    dataset = dataset.window(1+pred_samples, shift=1, drop_remainder=True)
     dataset = dataset.flat_map(
-        lambda window: window.batch(sequence_length+pred_samples, 
-                                    drop_remainder=True))
-    dataset = dataset.batch(batch_size, drop_remainder=True)#.shuffle(10000)
-    dataset = dataset.map(lambda window: (window[:, :sequence_length, :], window[:, sequence_length:, 0]))
+        lambda w: w.batch(1+pred_samples, drop_remainder=True))
+    dataset = dataset.map(lambda w: (w[:1, :], w[1:, 0]))
+    dataset = dataset.window(sequence_length, shift=1, drop_remainder=True)
+    dataset = dataset.flat_map(
+        lambda w0, w1: tf.data.Dataset.zip((
+            w0.batch(sequence_length, drop_remainder=True),
+            w1.batch(sequence_length, drop_remainder=True))))
+    dataset = dataset.batch(64, drop_remainder=True)
 
     return dataset
 
@@ -233,6 +236,9 @@ def gen_dataset(
     temp_diff_thrs: float = None,
     boxcox_trnsf_flag: bool = True,
     scale_flg: bool = True,
+    sequence_length: int = 24,
+    pred_samples: int = 10,
+    batch_size: int = 64,
     **kwargs):
     
     # Read data csv file
@@ -267,7 +273,7 @@ def gen_dataset(
         df[energy_col] = energy_values_trsnf
 
     # Standardize data
-
+    
 
     # Generate train, validation and test datasets
     dic_splits = {}
@@ -275,6 +281,11 @@ def gen_dataset(
         dic_splits[split] = gen_dataset_split(
             df, dic_folds, fold=fold, fold_split=split, 
             time_col=time_col, **kwargs)
+        num_batches = df.loc[dic_folds[fold][split]].shape[0]
+        num_batches = num_batches//(1+pred_samples)*(1+pred_samples)
+        num_batches = num_batches//sequence_length*sequence_length/batch_size
+
+        dic_splits[f'{split}_num_batches'] = num_batches
 
     return dic_splits
 
@@ -282,7 +293,7 @@ def gen_dataset(
 if __name__ == '__main__':
     final_data_path = '..//Data//final_data.csv'
     fold_json_path = '..//Data//folds.json'
-    dic_split = gen_dataset(time_col='index',
+    dic_split = gen_dataset(time_col='index', test_dataset_flg=True,
                           boxcox_trnsf_flag=False)
     # desired_fold = '0'
     # dic_splits = gen_dataset(final_data_path, fold_json_path)

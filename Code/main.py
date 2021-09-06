@@ -182,7 +182,7 @@ def gen_dataset_obj(
     dataset = dataset.window(1+pred_samples, shift=1, drop_remainder=True)
     dataset = dataset.flat_map(
         lambda w: w.batch(1+pred_samples, drop_remainder=True))
-    dataset = dataset.map(lambda w: (w[:1, :], w[1:, 0]))
+    dataset = dataset.map(lambda w: (w[0, :], w[1:, 0]))
     dataset = dataset.window(sequence_length, shift=1, drop_remainder=True)
     dataset = dataset.flat_map(
         lambda w0, w1: tf.data.Dataset.zip((
@@ -199,13 +199,20 @@ def gen_dataset_split(
     fold_split: str = 'train',
     time_col: str = 'tstp',
     scaler: FunctionTransformer = None,
+    energy_col: str = 'energy(kWh/hh)',
     **kwargs):
 
     lst_sms = dic_folds[fold][fold_split].copy()
     print('Tamanho lista de sms: ', len(lst_sms))
+    # Fit scaler if actual split is for trainning
+    if (fold_split=='train') & (scaler is not None):
+        scaler.fit(df.loc[lst_sms][[energy_col]])
+
     first_sm = lst_sms.pop(0)
 
     df_sm = df.loc[first_sm].copy()
+    if scaler:
+        df_sm[energy_col] = scaler.transform(df_sm[[energy_col]])
     df_sm = df_sm.set_index(time_col).sort_index().values
     dataset = gen_dataset_obj(df_sm, **kwargs)
 
@@ -216,11 +223,13 @@ def gen_dataset_split(
             print('Sm {} not found... verify on existing DF.'.format(sm))
             continue
         # print('--- Tamanho do DF: ', df_sm.shape)
+        if scaler:
+            df_sm[energy_col] = scaler.transform(df_sm[[energy_col]])
         df_sm = df_sm.set_index(time_col).sort_index().values
         dataset_aux = gen_dataset_obj(df_sm, **kwargs)
         dataset = dataset.concatenate(dataset_aux)
 
-    return dataset.shuffle(int(5e6), reshuffle_each_iteration=True).prefetch(1)
+    return dataset.shuffle(int(5e6), reshuffle_each_iteration=True)#.prefetch(1)
 
 def gen_dataset(
     final_data_path: str = '..//Data//acorn_{}_preproc_data.csv',
@@ -272,29 +281,39 @@ def gen_dataset(
         energy_values_trsnf[energy_values <= 0] = -1/boxcox_lmbda
         df[energy_col] = energy_values_trsnf
 
-    # Standardize data
-    
+    # Create scaler
+    scaler = StandardScaler() if scale_flg else None
 
     # Generate train, validation and test datasets
     dic_splits = {}
     for split in fold_splits:
         dic_splits[split] = gen_dataset_split(
             df, dic_folds, fold=fold, fold_split=split, 
-            time_col=time_col, **kwargs)
+            time_col=time_col, scaler=scaler, **kwargs)
         num_batches = df.loc[dic_folds[fold][split]].shape[0]
         num_batches = num_batches//(1+pred_samples)*(1+pred_samples)
         num_batches = num_batches//sequence_length*sequence_length/batch_size
 
         dic_splits[f'{split}_num_batches'] = num_batches
 
-    return dic_splits
+    return dic_splits, scaler
 
 #%%
 if __name__ == '__main__':
     final_data_path = '..//Data//final_data.csv'
-    fold_json_path = '..//Data//folds.json'
-    dic_split = gen_dataset(time_col='index', test_dataset_flg=True,
-                          boxcox_trnsf_flag=False)
+    fold_json_path = '..//Data//folds_test.json'
+    dic_split, scaler = gen_dataset(fold_json_path=fold_json_path,
+                                    time_col='index', scale_flg=True,
+                                    boxcox_trnsf_flag=False)
+    model = gen_dense_model_v0(input_shape=(24,4), print_summary=True)
+    model, hist = compile_and_fit(model, '', 
+                                  train_dataset=dic_split['train'],
+                                  val_dataset=dic_split['val'])
+
+    # TODO: Criar função para predição. Os passos a serem seguidos são:
+    #       - Verificar qual é a saída de uma rede para o conjunto de testes
+    #       - Acertar a função de métricas para a última sequência a ser prevista
+    
     # desired_fold = '0'
     # dic_splits = gen_dataset(final_data_path, fold_json_path)
 #     df = pd.read_csv(final_data_path)

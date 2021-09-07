@@ -1,11 +1,13 @@
 import numpy as np
+import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from tensorflow.keras.losses import MeanSquaredError, MeanAbsoluteError
 
 def last_timestep_mse(y_true, y_pred):
-    return mean_squared_error(y_true[:,-1], y_pred[:-1])
+    return MeanSquaredError()(y_true[:,-1,:], y_pred[:,-1,:])
 
 def last_timestep_mae(y_true, y_pred):
-    return mean_absolute_error(y_true[:,-1], y_pred[:-1])
+    return MeanAbsoluteError()(y_true[:,-1,:], y_pred[:,-1,:])
 
 def metrics (y_true,y_pred,filtON = False):
     """Calculates metrics for regressive modeling.
@@ -60,7 +62,7 @@ def metrics (y_true,y_pred,filtON = False):
                 
         return (k_best,np.round(corr_max,2))
     
-    last_y_true, last_y_pred = y_true[:,-1], y_pred[:,-1]
+    last_y_true, last_y_pred = y_true[:,-1,:], y_pred[:,-1,:]
     dic_metrics = {}
     dic_metrics['r2']  = r2_score(last_y_true,last_y_pred)
     dic_metrics['mae'] = mean_absolute_error(last_y_true,last_y_pred)

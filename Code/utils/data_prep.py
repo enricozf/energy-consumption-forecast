@@ -1,3 +1,6 @@
+# #%%
+# %load_ext autoreload
+# %autoreload 2
 #%%
 import pandas as pd
 import numpy as np
@@ -12,7 +15,7 @@ from tensorflow.python.ops.control_flow_ops import Assert
 from tensorflow.python.ops.gen_dataset_ops import generator_dataset
 from utils.exploratory_data_analysis import (read_acorn_group_blocks, 
                                              split_into_acorns)
-from utils.models import gen_dense_model_v0, compile_and_fit
+# from models import gen_dense_model_v0, compile_and_fit
 
 def create_df(
     consumption_file_path : str ='..//Data//halfhourly_dataset',
@@ -292,23 +295,23 @@ def gen_dataset(
             time_col=time_col, scaler=scaler, **kwargs)
         num_batches = df.loc[dic_folds[fold][split]].shape[0]
         num_batches = num_batches//(1+pred_samples)*(1+pred_samples)
-        num_batches = num_batches//sequence_length*sequence_length/batch_size
+        num_batches = num_batches//sequence_length*sequence_length//batch_size
 
         dic_splits[f'{split}_num_batches'] = num_batches
 
     return dic_splits, scaler
 
 #%%
-if __name__ == '__main__':
-    final_data_path = '..//Data//final_data.csv'
-    fold_json_path = '..//Data//folds_test.json'
-    dic_split, scaler = gen_dataset(fold_json_path=fold_json_path,
-                                    time_col='index', scale_flg=True,
-                                    boxcox_trnsf_flag=False)
-    model = gen_dense_model_v0(input_shape=(24,4), print_summary=True)
-    model, hist = compile_and_fit(model, '', 
-                                  train_dataset=dic_split['train'],
-                                  val_dataset=dic_split['val'])
+# if __name__ == '__main__':
+#     final_data_path = '..//Data//final_data.csv'
+#     fold_json_path = '..//Data//folds_test.json'
+#     dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
+#                                     time_col='index', scale_flg=True,
+#                                     boxcox_trnsf_flag=True)
+#     model = gen_dense_model_v0(input_shape=(24,4), print_summary=True)
+#     model, hist = compile_and_fit(model, '', 
+#                                   train_dataset=dic_split['train'],
+#                                   val_dataset=dic_split['val'])
 
     # TODO: Criar função para predição. Os passos a serem seguidos são:
     #       - Verificar qual é a saída de uma rede para o conjunto de testes
@@ -336,4 +339,3 @@ if __name__ == '__main__':
     # TODO: Alimentar e treinar modelo
 
 # %%
-print('09')

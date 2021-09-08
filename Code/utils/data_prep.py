@@ -175,23 +175,55 @@ def pre_processing(
     with open(save_fold_lmbdas_path, 'w') as f:
         dump(dic_lmbdas, f, indent=4)
 
+# Dataset for multiple timestamps in output
 def gen_dataset_obj(
     df_values: np.ndarray,
     sequence_length: int = 24,
     pred_samples: int = 10,
     batch_size: int = 64):
     
+    # Convert numpy arry to Tensors in Dataset object
     dataset = tf.data.Dataset.from_tensor_slices(tf.convert_to_tensor(df_values))
+    # Slice in input (1 TS) / output (pred_samples TSs), 
+    # so we need 1+pred_samples samples
     dataset = dataset.window(1+pred_samples, shift=1, drop_remainder=True)
     dataset = dataset.flat_map(
         lambda w: w.batch(1+pred_samples, drop_remainder=True))
-    dataset = dataset.map(lambda w: (w[0, :], w[1:, 0]))
+    dataset = dataset.map(lambda w: (w[0, :], w[1:, 0])) # chop into in/out-put
+    # Slice into sequences with sequence_length size both input and output
     dataset = dataset.window(sequence_length, shift=1, drop_remainder=True)
     dataset = dataset.flat_map(
         lambda w0, w1: tf.data.Dataset.zip((
             w0.batch(sequence_length, drop_remainder=True),
             w1.batch(sequence_length, drop_remainder=True))))
-    dataset = dataset.batch(64, drop_remainder=True)
+    # Slice sequences into batches
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+
+    return dataset
+
+# Dataset for only final timestamp in output
+def gen_dataset_obj_test(
+    df_values: np.ndarray,
+    sequence_length: int = 24,
+    pred_samples: int = 10,
+    batch_size: int = 64):
+    
+    # Convert numpy arry to Tensors in Dataset object
+    dataset = tf.data.Dataset.from_tensor_slices(tf.convert_to_tensor(df_values))
+    # Slice in input (1 TS) / output (pred_samples TSs), 
+    # so we need 1+pred_samples samples
+    dataset = dataset.window(sequence_length+pred_samples, shift=1, drop_remainder=True)
+    dataset = dataset.flat_map(
+        lambda w: w.batch(sequence_length+pred_samples, drop_remainder=True))
+    dataset = dataset.map(lambda w: (w[:sequence_length, :], w[sequence_length:, 0])) # chop into in/out-put
+    # Slice into sequences with sequence_length size both input and output
+    # dataset = dataset.window(sequence_length, shift=1, drop_remainder=True)
+    # dataset = dataset.flat_map(
+    #     lambda w0, w1: tf.data.Dataset.zip((
+    #         w0.batch(sequence_length, drop_remainder=True),
+    #         w1)))
+    # Slice sequences into batches
+    dataset = dataset.batch(batch_size, drop_remainder=True)
 
     return dataset
 
@@ -200,13 +232,29 @@ def gen_dataset_split(
     dic_folds: dict,
     fold: str = '0',
     fold_split: str = 'train',
+    num_sm_split: int = None,
     time_col: str = 'tstp',
     scaler: FunctionTransformer = None,
     energy_col: str = 'energy(kWh/hh)',
+    random_seed: int = 42,
+    pred_samples: int = 10,
+    sequence_length: int = 24,
+    batch_size: int = 64,
+    test_gen_dataset_flg: bool = False,
     **kwargs):
 
     lst_sms = dic_folds[fold][fold_split].copy()
+    np.random.seed(random_seed)
+    np.random.shuffle(lst_sms)
+    lst_sms = lst_sms[:num_sm_split]
     print('Tamanho lista de sms: ', len(lst_sms))
+    
+    # Count approximate number of batches in this split
+    shuffle_pool_size = df.loc[lst_sms].shape[0]
+    shuffle_pool_size = shuffle_pool_size//(1+pred_samples)*(1+pred_samples)
+    shuffle_pool_size = shuffle_pool_size//sequence_length*sequence_length
+    shuffle_pool_size = shuffle_pool_size//batch_size
+    
     # Fit scaler if actual split is for trainning
     if (fold_split=='train') & (scaler is not None):
         scaler.fit(df.loc[lst_sms][[energy_col]])
@@ -217,7 +265,15 @@ def gen_dataset_split(
     if scaler:
         df_sm[energy_col] = scaler.transform(df_sm[[energy_col]])
     df_sm = df_sm.set_index(time_col).sort_index().values
-    dataset = gen_dataset_obj(df_sm, **kwargs)
+    if test_gen_dataset_flg == False:
+        dataset = gen_dataset_obj(
+            df_sm, sequence_length=sequence_length, pred_samples=pred_samples,
+            batch_size=batch_size, **kwargs)
+    else:
+        print('Usando o gerador de testes')
+        dataset = gen_dataset_obj_test(
+            df_sm, sequence_length=sequence_length, pred_samples=pred_samples,
+            batch_size=batch_size, **kwargs)
 
     for sm in lst_sms:
         try:
@@ -229,10 +285,20 @@ def gen_dataset_split(
         if scaler:
             df_sm[energy_col] = scaler.transform(df_sm[[energy_col]])
         df_sm = df_sm.set_index(time_col).sort_index().values
-        dataset_aux = gen_dataset_obj(df_sm, **kwargs)
+        if test_gen_dataset_flg == False:
+            dataset_aux = gen_dataset_obj(
+                df_sm, sequence_length=sequence_length, pred_samples=pred_samples,
+                batch_size=batch_size, **kwargs)
+        else:
+            dataset_aux = gen_dataset_obj_test(
+                df_sm, sequence_length=sequence_length, pred_samples=pred_samples,
+                batch_size=batch_size, **kwargs)
         dataset = dataset.concatenate(dataset_aux)
 
-    return dataset.shuffle(int(5e6), reshuffle_each_iteration=True)#.prefetch(1)
+    # return dataset.shuffle(int(shuffle_pool_size), reshuffle_each_iteration=True).prefetch(1)
+    if fold_split == 'train':
+        dataset = dataset.shuffle(int(shuffle_pool_size))
+    return dataset.prefetch(1), shuffle_pool_size
 
 def gen_dataset(
     final_data_path: str = '..//Data//acorn_{}_preproc_data.csv',
@@ -248,6 +314,7 @@ def gen_dataset(
     temp_diff_thrs: float = None,
     boxcox_trnsf_flag: bool = True,
     scale_flg: bool = True,
+    num_sm_split: dict = {'train':None, 'val':None, 'test':None},
     sequence_length: int = 24,
     pred_samples: int = 10,
     batch_size: int = 64,
@@ -290,12 +357,11 @@ def gen_dataset(
     # Generate train, validation and test datasets
     dic_splits = {}
     for split in fold_splits:
-        dic_splits[split] = gen_dataset_split(
+        dic_splits[split], num_batches = gen_dataset_split(
             df, dic_folds, fold=fold, fold_split=split, 
-            time_col=time_col, scaler=scaler, **kwargs)
-        num_batches = df.loc[dic_folds[fold][split]].shape[0]
-        num_batches = num_batches//(1+pred_samples)*(1+pred_samples)
-        num_batches = num_batches//sequence_length*sequence_length//batch_size
+            time_col=time_col, scaler=scaler, sequence_length=sequence_length,
+            pred_samples=pred_samples, batch_size=batch_size, 
+            num_sm_split=num_sm_split[split], **kwargs)
 
         dic_splits[f'{split}_num_batches'] = num_batches
 
@@ -303,15 +369,36 @@ def gen_dataset(
 
 #%%
 # if __name__ == '__main__':
-#     final_data_path = '..//Data//final_data.csv'
-#     fold_json_path = '..//Data//folds_test.json'
-#     dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
-#                                     time_col='index', scale_flg=True,
-#                                     boxcox_trnsf_flag=True)
-#     model = gen_dense_model_v0(input_shape=(24,4), print_summary=True)
-#     model, hist = compile_and_fit(model, '', 
-#                                   train_dataset=dic_split['train'],
-#                                   val_dataset=dic_split['val'])
+    # fold_json_path = '..//..//Data//folds_test.json'
+    
+    # # Read data csv file
+    # df = pd.read_csv('..//..//Data//acorn_Affluent_preproc_data.csv')
+    # # Sorting values and changing df index
+    # df.sort_values(['LCLid','index'],inplace=True)
+    # df.set_index('LCLid', inplace=True)
+
+    # # Read fold splits json file
+    # with open(fold_json_path, 'r') as f:
+    #     dic_folds = load(f)
+
+    # lst_sms = dic_folds['3']['test'].copy()
+    # print('Tamanho lista de sms: ', len(lst_sms))
+
+    # df_sm = df.loc["MAC002233"].copy()
+    # df_sm = df_sm.values
+
+    # dataset = gen_dataset_obj_test(
+    #     df_sm, sequence_length=24, pred_samples=10,
+    #     batch_size=1028)
+
+    # dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
+    #                                 fold_splits=['test'],
+    #                                 time_col='index', scale_flg=False,
+    #                                 num_sm_split={
+    #                                     'train':300, 'val':100, 'test':50},
+    #                                 boxcox_trnsf_flag=False,
+    #                                 test_gen_dataset_flg = True,
+    #                                 batch_size=1028)
 
     # TODO: Criar função para predição. Os passos a serem seguidos são:
     #       - Verificar qual é a saída de uma rede para o conjunto de testes
@@ -337,5 +424,3 @@ def gen_dataset(
 #     # separate_sm_in_folds(lst_lcl_ids, fold_json_path)
     # TODO: Splitar os dados em treino teste
     # TODO: Alimentar e treinar modelo
-
-# %%

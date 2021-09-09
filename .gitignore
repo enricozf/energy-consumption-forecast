@@ -2,3 +2,6 @@
 *.png
 *.csv
 *.gz
+*.hdf5
+*.h5
+*.parquet.gzip

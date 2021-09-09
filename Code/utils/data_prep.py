@@ -298,7 +298,7 @@ def gen_dataset_split(
     # return dataset.shuffle(int(shuffle_pool_size), reshuffle_each_iteration=True).prefetch(1)
     if fold_split == 'train':
         dataset = dataset.shuffle(int(shuffle_pool_size))
-    return dataset.prefetch(1), shuffle_pool_size
+    return dataset, shuffle_pool_size
 
 def gen_dataset(
     final_data_path: str = '..//Data//acorn_{}_preproc_data.csv',
@@ -321,7 +321,11 @@ def gen_dataset(
     **kwargs):
     
     # Read data csv file
-    df = pd.read_csv(final_data_path.format(desired_acorn_name))
+    file_path = final_data_path.format(desired_acorn_name)
+    if file_path.split('.')[-1] == 'csv':
+        df = pd.read_csv(file_path)
+    else:
+        df = pd.read_parquet(file_path)
 
     # Read fold splits json file
     with open(fold_json_path, 'r') as f:

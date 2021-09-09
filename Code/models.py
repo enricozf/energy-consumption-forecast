@@ -286,12 +286,14 @@ def optuna_dense_model_v1(trial: optuna.trial.Trial):
                                     batch_size=256,
                                     test_gen_dataset_flg=True)
 
+    # All suggested values
+    units = trial.suggest_int('1st_layer',4,20,step=4)
+    lr = trial.suggest_loguniform('lr', 1e-5,1e-3)
+
     ip = Input(shape=(24,4))
 
-    x = TimeDistributed(Dense(trial.suggest_int('1st_layer',4,20,step=4),
-                              activation='relu'))(ip)
+    x = TimeDistributed(Dense(units, activation='relu'))(ip)
     x = Flatten()(x)
-
     x = Dense(10)(x)
 
     model = Model(ip,x)
@@ -309,7 +311,6 @@ def optuna_dense_model_v1(trial: optuna.trial.Trial):
 
     # Compile model
     print('Compiling model...')
-    lr = trial.suggest_loguniform('lr', 1e-5,1e-3)
     model.compile(
         optimizer=Adam(learning_rate=lr),
         metrics=[tf.keras.losses.MeanAbsoluteError()],
@@ -326,16 +327,11 @@ def optuna_dense_model_v1(trial: optuna.trial.Trial):
 
     # Load best model weights
     print('Loading best model for validation...')
-    best_model = keras.models.load_model(
-        ckpt_filepath)
-    best_model.compile(
-        optimizer=Adam(learning_rate=lr),
-        metrics=[tf.keras.losses.MeanAbsoluteError()],
-        loss=tf.keras.losses.MeanSquaredError()
-    )
+    
+    model.load_weights(ckpt_filepath)
 
     # Evaluate and return loss for test dataset
-    scores = best_model.evaluate(
+    scores = model.evaluate(
         dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
     return scores[0]
 
@@ -358,7 +354,7 @@ def main_optuna(study_name: str, n_trials: int):
         for key, value in trial.params.items():
             print("    {}: {}".format(key, value))
 
-        joblib.dump(study, study_name+'.pkl')
+        joblib.dump(study, '..//Results//'+study_name+'.pkl')
 
 
 def main_test():

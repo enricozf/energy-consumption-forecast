@@ -1,8 +1,8 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
-    Input, Dense, LSTM, GRU, Conv1D, Dropout, Flatten, Bidirectional,
-    TimeDistributed, GlobalAveragePooling1D
+    Input, InputLayer, Dense, LSTM, GRU, Conv1D, Dropout, Flatten, 
+    Bidirectional, TimeDistributed, GlobalAveragePooling1D
 )
 from tensorflow.keras.models import Model
 
@@ -34,23 +34,26 @@ class Patches(tf.keras.layers.Layer):
         return config
 
 class MLPMixerLayer(tf.keras.layers.Layer):
-    def __init__(self, dropout_rate=0, *args, **kwargs):
+    def __init__(
+        self, num_patches=6, hidden_units=16, dropout_rate=0, *args, **kwargs):
         super(MLPMixerLayer, self).__init__(*args, **kwargs)
         self.dropout_rate = dropout_rate
 
-    def build(self, num_patches, hidden_units):
+    # def build(self, ):
         self.mlp1 = tf.keras.Sequential(
             [
-            Dense(units=num_patches, activation='gelu'),
-            Dense(units=num_patches),
+            InputLayer(input_shape=(hidden_units, num_patches)),
+            TimeDistributed(Dense(units=num_patches, activation='gelu')),
+            TimeDistributed(Dense(units=num_patches)),
             Dropout(rate=self.dropout_rate)
             ]
         )
 
         self.mlp2 = tf.keras.Sequential(
             [
-            Dense(units=num_patches, activation='gelu'),
-            Dense(units=hidden_units),
+            InputLayer(input_shape=(num_patches, hidden_units)),
+            TimeDistributed(Dense(units=num_patches, activation='gelu')),
+            TimeDistributed(Dense(units=hidden_units)),
             Dropout(rate=self.dropout_rate)
             ]
         )

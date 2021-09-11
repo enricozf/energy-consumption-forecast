@@ -180,7 +180,8 @@ def gen_dataset_obj(
     df_values: np.ndarray,
     sequence_length: int = 24,
     pred_samples: int = 10,
-    batch_size: int = 64):
+    batch_size: int = 64,
+    **kwargs):
     
     # Convert numpy arry to Tensors in Dataset object
     dataset = tf.data.Dataset.from_tensor_slices(tf.convert_to_tensor(df_values))
@@ -206,7 +207,8 @@ def gen_dataset_obj_test(
     df_values: np.ndarray,
     sequence_length: int = 24,
     pred_samples: int = 10,
-    batch_size: int = 64):
+    batch_size: int = 64,
+    **kwargs):
     
     # Convert numpy arry to Tensors in Dataset object
     dataset = tf.data.Dataset.from_tensor_slices(tf.convert_to_tensor(df_values))

@@ -15,42 +15,44 @@ from tensorflow.keras.optimizers import Adam
 
 import optuna
 
-from utils.metrics import last_timestep_mae, last_timestep_mse
-from utils.data_prep import gen_dataset
-from utils.models import Patches, MLPMixerLayer
+# from utils.metrics import last_timestep_mae, last_timestep_mse
+# from utils.data_prep import gen_dataset
 from utils.optuna_scripts import (
-    optuna_dense_model_v0, optuna_dense_model_v1)
+    optuna_dense_many2many_v0, optuna_dense_many2one_v0, 
+    optuna_dense_many2one_v1, optuna_mlp_mixer_many2one_v0,
+    optuna_lstm_many2one_v0)
+from utils.models import Patches, MLPMixerLayer
 
-def gen_dense_model_v0(
-    input_shape, output_samples: int = 10, print_summary: bool = False):
+# def gen_dense_model_v0(
+#     input_shape, output_samples: int = 10, print_summary: bool = False):
     
-    ip = Input(shape=input_shape)
-    x = TimeDistributed(Dense(output_samples))(ip)
-    x = TimeDistributed(Dense(output_samples))(x)
+#     ip = Input(shape=input_shape)
+#     x = TimeDistributed(Dense(output_samples))(ip)
+#     x = TimeDistributed(Dense(output_samples))(x)
 
-    model = Model(ip, x)
+#     model = Model(ip, x)
 
-    if print_summary:
-        print(model.summary())
+#     if print_summary:
+#         print(model.summary())
 
-    return model
+#     return model
 
 
-def gen_dense_model_v1(
-    input_shape, output_samples: int = 10, print_summary: bool = False):
+# def gen_dense_model_v1(
+#     input_shape, output_samples: int = 10, print_summary: bool = False):
     
-    ip = Input(shape=input_shape)
-    x = TimeDistributed(Dense(output_samples))(ip)
-    # x = TimeDistributed(Dense(output_samples//4))(x)
-    x = Flatten()(x)
-    x = Dense(output_samples)(x)
+#     ip = Input(shape=input_shape)
+#     x = TimeDistributed(Dense(output_samples))(ip)
+#     # x = TimeDistributed(Dense(output_samples//4))(x)
+#     x = Flatten()(x)
+#     x = Dense(output_samples)(x)
 
-    model = Model(ip, x)
+#     model = Model(ip, x)
 
-    if print_summary:
-        print(model.summary())
+#     if print_summary:
+#         print(model.summary())
 
-    return model
+#     return model
 
 # class Patches(tf.keras.layers.Layer):
 #     def __init__(self, patch_size=4, num_patches=6, *args, **kwargs):
@@ -132,76 +134,76 @@ def gen_dense_model_v1(
 #         )
 #         return config
 
-def gen_mlp_mixer_model_v0(
-    input_shape: list, patch_size: int, #hidden_units: int, 
-    num_blocks: int = 1, dropout_rate: float = 0, 
-    output_samples: int = 10, print_summary: bool = False):
+# def gen_mlp_mixer_model_v0(
+#     input_shape: list, patch_size: int, #hidden_units: int, 
+#     num_blocks: int = 1, dropout_rate: float = 0, 
+#     output_samples: int = 10, print_summary: bool = False):
     
-    num_patches = input_shape[0] / patch_size
-    hidden_units = patch_size**2
+#     num_patches = input_shape[0] / patch_size
+#     hidden_units = patch_size**2
 
-    ip = Input(shape=input_shape)
-    x = Patches(patch_size=patch_size, num_patches=num_patches)(ip)
-    x = keras.Sequential(
-        [MLPMixerLayer(
-            num_patches, hidden_units, dropout_rate) for _ in range(num_blocks)]
-    )(x)
-    x = GlobalAveragePooling1D()(x)
-    x = Dense(output_samples)(x)
+#     ip = Input(shape=input_shape)
+#     x = Patches(patch_size=patch_size, num_patches=num_patches)(ip)
+#     x = keras.Sequential(
+#         [MLPMixerLayer(
+#             num_patches, hidden_units, dropout_rate) for _ in range(num_blocks)]
+#     )(x)
+#     x = GlobalAveragePooling1D()(x)
+#     x = Dense(output_samples)(x)
 
-    model = Model(ip, x)
+#     model = Model(ip, x)
 
-    if print_summary:
-        print(model.summary())
+#     if print_summary:
+#         print(model.summary())
 
-    return model
+#     return model
 
-def compile_and_fit(
-    model: Model, ckpt_filepath: str, train_dataset: tf.data.Dataset, 
-    val_dataset: tf.data.Dataset = None, early_stopping: bool=True,
-    multiple_ts_outputs = True, **kwargs):
+# def compile_and_fit(
+#     model: Model, ckpt_filepath: str, train_dataset: tf.data.Dataset, 
+#     val_dataset: tf.data.Dataset = None, early_stopping: bool=True,
+#     multiple_ts_outputs = True, **kwargs):
     
-    # Configuring model callbacks
-    print('Creating callbacks...')
-    if early_stopping:
-        earlypointer = EarlyStopping(
-            monitor='val_loss', min_delta=kwargs.get('early_stop_min_delta', 0.00001),
-            patience=kwargs.get('early_stop_patience', 5), verbose=1
-            )
-        callbacks = [earlypointer]
-    else:
-        callcacks = []
+#     # Configuring model callbacks
+#     print('Creating callbacks...')
+#     if early_stopping:
+#         earlypointer = EarlyStopping(
+#             monitor='val_loss', min_delta=kwargs.get('early_stop_min_delta', 0.00001),
+#             patience=kwargs.get('early_stop_patience', 5), verbose=1
+#             )
+#         callbacks = [earlypointer]
+#     else:
+#         callcacks = []
 
-    ckpt_callback = ModelCheckpoint(
-        filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
-    )
-    callbacks.append(ckpt_callback)
+#     ckpt_callback = ModelCheckpoint(
+#         filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+#     )
+#     callbacks.append(ckpt_callback)
 
-    # log_dir = "..//Results//logs//fit//" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-    # callbacks.append(tensorboard_callback)
+#     # log_dir = "..//Results//logs//fit//" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+#     # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+#     # callbacks.append(tensorboard_callback)
 
-    # Compiling the model
-    print('Compiling model...')
-    if multiple_ts_outputs:
-        model.compile(
-            optimizer=Adam(learning_rate=kwargs.get('lr',0.001)),
-            metrics=[last_timestep_mae,last_timestep_mse],
-            loss=tf.keras.losses.MeanSquaredError()
-        )
-    else:
-        model.compile(
-            optimizer=Adam(learning_rate=kwargs.get('lr',0.001)),
-            metrics=[tf.keras.losses.MeanAbsoluteError()],
-            loss=tf.keras.losses.MeanSquaredError()
-        )
+#     # Compiling the model
+#     print('Compiling model...')
+#     if multiple_ts_outputs:
+#         model.compile(
+#             optimizer=Adam(learning_rate=kwargs.get('lr',0.001)),
+#             metrics=[last_timestep_mae,last_timestep_mse],
+#             loss=tf.keras.losses.MeanSquaredError()
+#         )
+#     else:
+#         model.compile(
+#             optimizer=Adam(learning_rate=kwargs.get('lr',0.001)),
+#             metrics=[tf.keras.losses.MeanAbsoluteError()],
+#             loss=tf.keras.losses.MeanSquaredError()
+#         )
 
-    # Fitting the model
-    print('Fitting model...')
-    hist = model.fit(train_dataset, callbacks=callbacks,
-                     validation_data=val_dataset, verbose=1, **kwargs)
+#     # Fitting the model
+#     print('Fitting model...')
+#     hist = model.fit(train_dataset, callbacks=callbacks,
+#                      validation_data=val_dataset, verbose=1, **kwargs)
 
-    return model, hist
+#     return model, hist
 
 # def optuna_dense_model_v0(trial: optuna.trial.Trial):
 
@@ -347,8 +349,11 @@ def compile_and_fit(
 def main_optuna(study_name: str, n_trials: int):
     # Select correct model to be tunned 
     dic_models = {
-        'dense_model_v0' : optuna_dense_model_v0,
-        'dense_model_v1' : optuna_dense_model_v1,
+        'dense_many2many_v0' : optuna_dense_many2many_v0,
+        'dense_many2one_v0' : optuna_dense_many2one_v0,
+        'dense_many2one_v1' : optuna_dense_many2one_v1,
+        'mlp_mixer_many2one_v0' : optuna_mlp_mixer_many2one_v0,
+        'lstm_many2one_v0' : optuna_lstm_many2one_v0
     }
 
     # Load or create study
@@ -378,28 +383,27 @@ def main_optuna(study_name: str, n_trials: int):
 
         joblib.dump(study, save_file_path)
 
-
-def main_test():
-    fold_json_path = '..//Data//folds.json'
-    dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
-                                    time_col='index', scale_flg=True,
-                                    num_sm_split={
-                                        'train':NUM_SM_TRAIN, 
-                                        'val':NUM_SM_VAL, 
-                                        'test':NUM_SM_TEST},
-                                    boxcox_trnsf_flag=True,
-                                    batch_size=256,
-                                    test_gen_dataset_flg=True)
-    print(dic_split['train_num_batches'])
-    model = gen_mlp_mixer_model_v0(
-        input_shape=(24,4), patch_size=4, print_summary=True)
-    model, hist = compile_and_fit(model, TEST_CKPT_PATH, epochs=1000,
-                                  train_dataset=dic_split['train'].repeat(),
-                                  val_dataset=dic_split['val'].repeat(),
-                                  steps_per_epoch=dic_split['train_num_batches']//10,
-                                  validation_steps=dic_split['val_num_batches']*.9//1,
-                                  multiple_ts_outputs=False)
-    return model, hist
+# def main_test():
+#     fold_json_path = '..//Data//folds.json'
+#     dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
+#                                     time_col='index', scale_flg=True,
+#                                     num_sm_split={
+#                                         'train':NUM_SM_TRAIN, 
+#                                         'val':NUM_SM_VAL, 
+#                                         'test':NUM_SM_TEST},
+#                                     boxcox_trnsf_flag=True,
+#                                     batch_size=256,
+#                                     test_gen_dataset_flg=True)
+#     print(dic_split['train_num_batches'])
+#     model = gen_mlp_mixer_model_v0(
+#         input_shape=(24,4), patch_size=4, print_summary=True)
+#     model, hist = compile_and_fit(model, TEST_CKPT_PATH, epochs=1000,
+#                                   train_dataset=dic_split['train'].repeat(),
+#                                   val_dataset=dic_split['val'].repeat(),
+#                                   steps_per_epoch=dic_split['train_num_batches']//10,
+#                                   validation_steps=dic_split['val_num_batches']*.9//1,
+#                                   multiple_ts_outputs=False)
+#     return model, hist
 
 global NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST, TEST_CKPT_PATH
 
@@ -412,7 +416,7 @@ if __name__ == '__main__':
     assert len(args) == 3, 'Correct arguments passed to python execution.'
     main_optuna(
         study_name=args[1],
-        n_trials=args[2])
+        n_trials=int(args[2]))
     # main_test()
 
 

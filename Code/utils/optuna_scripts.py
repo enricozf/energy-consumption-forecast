@@ -24,7 +24,7 @@ DATASET_PARAMS = {
         'val':50, 
         'test':50
     },
-    'boxcox_trnsf_flag' : True, 'batch_size' : 512
+    'boxcox_trnsf_flag' : True, 'batch_size' : 256
 }
 
 def evaluate_model(
@@ -71,20 +71,15 @@ def evaluate_model(
 
 def optuna_dense_many2many_v0(trial: optuna.trial.Trial):
 
-    fold_json_path = '..//Data//folds.json'
-    ckpt_filepath = '..//Results//tmp//best_model.hdf5'
-    dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
-                                    time_col='index', scale_flg=True,
-                                    num_sm_split={
-                                        'train':200, 
-                                        'val':50, 
-                                        'test':50},
-                                    boxcox_trnsf_flag=True,
-                                    batch_size=512)
+    DATASET_PARAMS['test_gen_dataset_flg'] = False
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    units_1st = trial.suggest_int('1st_layer',4,20,step=4)
+    lr = trial.suggest_loguniform('lr', 1e-5,1e-3)
 
     ip = Input(shape=(24,4))
 
-    x = TimeDistributed(Dense(trial.suggest_int('1st_layer',4,20,step=4),
+    x = TimeDistributed(Dense(units_1st,
                               activation='relu'))(ip)
     # if num_dense_layers == 3:
     #     x = TimeDistributed(Dense(trial.suggest_int('2nd_layer',4,20,step=4),
@@ -96,67 +91,15 @@ def optuna_dense_many2many_v0(trial: optuna.trial.Trial):
 
     print(model.summary())
 
-    earlypointer = EarlyStopping(
-            monitor='val_loss', min_delta=0.00001,
-            patience=5, verbose=1
-            )
-    ckpt_callback = ModelCheckpoint(
-        filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr,
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
-    callbacks = [earlypointer, ckpt_callback]
-
-    # Compile model
-    print('Compiling model...')
-    lr = trial.suggest_loguniform('lr', 1e-5,1e-3)
-    model.compile(
-        optimizer=Adam(learning_rate=lr),
-        metrics=[last_timestep_mae,last_timestep_mse],
-        loss=tf.keras.losses.MeanSquaredError()
-    )
-
-    # Fit model
-    model.fit(
-        dic_split['train'].repeat(), epochs=1000, callbacks=callbacks,
-        validation_data=dic_split['val'].repeat(),verbose=2,
-        steps_per_epoch=dic_split['train_num_batches']//10,
-        validation_steps=dic_split['val_num_batches']*.9//1
-    )
-
-    # Load best model weights
-    print('Loading best model for validation...')
-    best_model = keras.models.load_model(
-        ckpt_filepath,
-        custom_objects={
-            "last_timestep_mae" : last_timestep_mae,
-            "last_timestep_mse" : last_timestep_mae
-        })
-    best_model.compile(
-        optimizer=Adam(learning_rate=lr),
-        metrics=[last_timestep_mae,last_timestep_mse],
-        loss=tf.keras.losses.MeanSquaredError()
-    )
-
-    # Evaluate and return loss for test dataset
-    scores = best_model.evaluate(
-        dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
-    return scores[0]
-
 
 def optuna_dense_many2one_v0(trial: optuna.trial.Trial):
 
-    fold_json_path = '..//Data//folds.json'
-    ckpt_filepath = '..//Results//tmp//best_model.hdf5'
-    dic_split, scaler = gen_dataset(
-        final_data_path='..//Data//acorn_{}_preproc_data.parquet.gzip',
-        fold_json_path=fold_json_path, fold='3',
-        time_col='index', scale_flg=True,
-        num_sm_split={
-            'train':200, 
-            'val':50, 
-            'test':50},
-        boxcox_trnsf_flag=True,
-        batch_size=256,
-        test_gen_dataset_flg=True)
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
 
     # All suggested values
     units = trial.suggest_int('1st_layer',4,20,step=4)
@@ -172,58 +115,15 @@ def optuna_dense_many2one_v0(trial: optuna.trial.Trial):
 
     print(model.summary())
 
-    earlypointer = EarlyStopping(
-            monitor='val_loss', min_delta=0.00001,
-            patience=5, verbose=1
-            )
-    ckpt_callback = ModelCheckpoint(
-        filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr,
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
-    callbacks = [earlypointer, ckpt_callback]
-
-    # Compile model
-    print('Compiling model...')
-    model.compile(
-        optimizer=Adam(learning_rate=lr),
-        metrics=[tf.keras.losses.MeanAbsoluteError()],
-        loss=tf.keras.losses.MeanSquaredError()
-    )
-
-    # Fit model
-    model.fit(
-        dic_split['train'].repeat().prefetch(tf.data.AUTOTUNE), 
-        epochs=1000, callbacks=callbacks,
-        validation_data=dic_split['val'].repeat().prefetch(tf.data.AUTOTUNE),
-        verbose=2,
-        steps_per_epoch=dic_split['train_num_batches']//10,
-        validation_steps=dic_split['val_num_batches']*.9//1
-    )
-
-    # Load best model weights
-    print('Loading best model for validation...')
-    
-    model.load_weights(ckpt_filepath)
-
-    # Evaluate and return loss for test dataset
-    scores = model.evaluate(
-        dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
-    return scores[0]
 
 def optuna_dense_many2one_v1(trial: optuna.trial.Trial):
 
-    fold_json_path = '..//Data//folds.json'
-    ckpt_filepath = '..//Results//tmp//best_model.hdf5'
-    dic_split, scaler = gen_dataset(
-        final_data_path='..//Data//acorn_{}_preproc_data.parquet.gzip',
-        fold_json_path=fold_json_path, fold='3',
-        time_col='index', scale_flg=True,
-        num_sm_split={
-            'train':200, 
-            'val':50, 
-            'test':50},
-        boxcox_trnsf_flag=True,
-        batch_size=256,
-        test_gen_dataset_flg=True)
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
 
     # All suggested values
     units_1st = trial.suggest_int('1st_layer',4,20,step=4)
@@ -240,58 +140,16 @@ def optuna_dense_many2one_v1(trial: optuna.trial.Trial):
     model = Model(ip,x)
 
     print(model.summary())
-
-    earlypointer = EarlyStopping(
-            monitor='val_loss', min_delta=0.00001,
-            patience=5, verbose=1
-            )
-    ckpt_callback = ModelCheckpoint(
-        filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
-    )
-    callbacks = [earlypointer, ckpt_callback]
-
-    # Compile model
-    print('Compiling model...')
-    model.compile(
-        optimizer=Adam(learning_rate=lr),
-        metrics=[tf.keras.losses.MeanAbsoluteError()],
-        loss=tf.keras.losses.MeanSquaredError()
-    )
-
-    # Fit model
-    model.fit(
-        dic_split['train'].repeat().prefetch(tf.data.AUTOTUNE), 
-        epochs=1000, callbacks=callbacks,
-        validation_data=dic_split['val'].repeat().prefetch(tf.data.AUTOTUNE),
-        verbose=2,
-        steps_per_epoch=dic_split['train_num_batches']//10,
-        validation_steps=dic_split['val_num_batches']*.9//1
-    )
-
-    # Load best model weights
-    print('Loading best model for validation...')
     
-    model.load_weights(ckpt_filepath)
-
-    # Evaluate and return loss for test dataset
-    scores = model.evaluate(
-        dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
-    return scores[0]
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr,
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
 
 def optuna_mlp_mixer_many2one_v0(trial: optuna.trial.Trial):
-    fold_json_path = '..//Data//folds.json'
-    ckpt_filepath = '..//Results//tmp//best_model.hdf5'
-    dic_split, scaler = gen_dataset(
-        final_data_path='..//Data//acorn_{}_preproc_data.parquet.gzip',
-        fold_json_path=fold_json_path, fold='3',
-        time_col='index', scale_flg=True,
-        num_sm_split={
-            'train':200, 
-            'val':50, 
-            'test':50},
-        boxcox_trnsf_flag=True,
-        batch_size=256,
-        test_gen_dataset_flg=True)
+    
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
 
     # All suggested values
     num_blocks = trial.suggest_int('num_blocks',1,6,step=1)
@@ -316,46 +174,13 @@ def optuna_mlp_mixer_many2one_v0(trial: optuna.trial.Trial):
 
     print(model.summary())
 
-    earlypointer = EarlyStopping(
-            monitor='val_loss', min_delta=0.00001,
-            patience=5, verbose=1
-            )
-    ckpt_callback = ModelCheckpoint(
-        filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr,
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
-    callbacks = [earlypointer, ckpt_callback]
-
-    # Compile model
-    print('Compiling model...')
-    model.compile(
-        optimizer=Adam(learning_rate=lr),
-        metrics=[tf.keras.losses.MeanAbsoluteError()],
-        loss=tf.keras.losses.MeanSquaredError()
-    )
-
-    # Fit model
-    print('Fitting model...')
-    model.fit(
-        dic_split['train'].repeat().prefetch(tf.data.AUTOTUNE), 
-        epochs=1000, callbacks=callbacks,
-        validation_data=dic_split['val'].repeat().prefetch(tf.data.AUTOTUNE),
-        verbose=2,
-        steps_per_epoch=dic_split['train_num_batches']//10,
-        validation_steps=dic_split['val_num_batches']*.9//1
-    )
-
-    # Load best model weights
-    print('Loading best model for validation...')
-    
-    model.load_weights(ckpt_filepath)
-
-    # Evaluate and return loss for test dataset
-    scores = model.evaluate(
-        dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
-    return scores[0]
 
 def optuna_lstm_many2one_v0(trial: optuna.trial.Trial):
-    DATASET_PARAMS['fold_json_path'] = '..//Data//folds_test.json'
+
     DATASET_PARAMS['test_gen_dataset_flg'] = True
     dic_split, scaler = gen_dataset(**DATASET_PARAMS)
 
@@ -364,6 +189,7 @@ def optuna_lstm_many2one_v0(trial: optuna.trial.Trial):
     lr = trial.suggest_float('lr', 1e-4,1e-3, step=4.9e-4)
     input_shape = (24,4)
 
+    # Create model
     ip = Input(shape=input_shape)
 
     x = LSTM(units_1st, return_sequences=False)(ip)
@@ -375,5 +201,61 @@ def optuna_lstm_many2one_v0(trial: optuna.trial.Trial):
 
     return evaluate_model(
         model=model, dic_split=dic_split, lr=lr, 
-        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath'), epochs=1
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+def optuna_lstm_many2one_v1(trial: optuna.trial.Trial):
+
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    units_1st = trial.suggest_int('1st_layer',2,20,step=2)
+    units_2nd = trial.suggest_int('2nd_layer', 2, 20, step=4)
+    lr = trial.suggest_float('lr', 1e-4,1e-3, step=4.9e-4)
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = LSTM(units_1st, return_sequences=True)(ip)
+    x = LSTM(units_2nd, return_sequences=False)(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+
+def optuna_conv1d_lstm_many2one_v0(trial: optuna.trial.Trial):
+
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    units_1st = trial.suggest_int('1st_layer',4,16,step=4)
+    filters_num = trial.suggest_categorical('filters_num', [4, 8, 16])
+    kernel_size = trial.suggest_categorical('kernel_size', [3,5,7])
+    lr = 7e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = Conv1D(filters=filters_num, kernel_size=kernel_size, )
+    x = LSTM(units_1st, return_sequences=False)(ip)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )

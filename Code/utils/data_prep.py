@@ -303,7 +303,7 @@ def gen_dataset_split(
     return dataset, shuffle_pool_size
 
 def gen_dataset(
-    final_data_path: str = '..//Data//acorn_{}_preproc_data.csv',
+    final_data_path: str = '..//Data//acorn_{}_preproc_data.parquet.gzip',
     fold_json_path: str = '..//Data//folds.json',
     boxcox_lmdas_path: str = '..//Data//boxcox_lmbdas_per_fold.json',
     desired_acorn_name : str = 'Affluent',

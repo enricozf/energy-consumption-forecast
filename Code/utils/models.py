@@ -2,8 +2,9 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
     Input, InputLayer, Dense, LSTM, GRU, Conv1D, Dropout, Flatten, 
-    Bidirectional, TimeDistributed, GlobalAveragePooling1D
+    Bidirectional, TimeDistributed, GlobalAveragePooling1D, Add
 )
+from tensorflow.keras import activations
 from tensorflow.keras.models import Model
 
 class Patches(tf.keras.layers.Layer):
@@ -88,3 +89,29 @@ class MLPMixerLayer(tf.keras.layers.Layer):
             }
         )
         return config
+
+class GatedActivationUnit(tf.keras.layers.Layer):
+    def __init__(self, activation="tanh", **kwargs):
+        super().__init__(**kwargs)
+        self.activation = activations.get(activation)
+
+    def call(self, inputs):
+        n_filters = inputs.shape[-1] // 2
+        linear_output = self.activation(inputs[..., :n_filters])
+        gate = activations.sigmoid(inputs[..., n_filters:])
+        return self.activation(linear_output) * gate
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            "activation" : self.activation
+        })
+
+        return config
+
+def wavenet_residual_block(inputs, n_filters, dilation_rate):
+    z = Conv1D(2 * n_filters, kernel_size=2, padding="causal",
+                dilation_rate=dilation_rate)(inputs)
+    z = GatedActivationUnit()(z)
+    z = Conv1D(n_filters, kernel_size=1)(z)
+    return Add()([z, inputs]), z

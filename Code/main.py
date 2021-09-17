@@ -21,7 +21,8 @@ from utils.optuna_scripts import (
     optuna_dense_many2many_v0, optuna_dense_many2one_v0, 
     optuna_dense_many2one_v1, optuna_mlp_mixer_many2one_v0,
     optuna_lstm_many2one_v0, optuna_lstm_many2one_v1,
-    optuna_conv1d_lstm_many2one_v0)
+    optuna_conv1d_lstm_many2one_v0, optuna_wavenet_many2one_v0,
+    optuna_wavenet_many2one_v1)
 from utils.models import Patches, MLPMixerLayer
 
 # def gen_dense_model_v0(
@@ -356,7 +357,9 @@ def main_optuna(study_name: str, n_trials: int):
         'mlp_mixer_many2one_v0' : optuna_mlp_mixer_many2one_v0,
         'lstm_many2one_v0' : optuna_lstm_many2one_v0,
         'lstm_many2one_v1' : optuna_lstm_many2one_v1,
-        'conv1d_lstm_many2one_v0' : optuna_conv1d_lstm_many2one_v0
+        'conv1d_lstm_many2one_v0' : optuna_conv1d_lstm_many2one_v0,
+        'wavenet_many2one_v0' : optuna_wavenet_many2one_v0,
+        'wavenet_many2one_v1' : optuna_wavenet_many2one_v1
     }
 
     # Load or create study
@@ -408,10 +411,10 @@ def main_optuna(study_name: str, n_trials: int):
 #                                   multiple_ts_outputs=False)
 #     return model, hist
 
-global NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST, TEST_CKPT_PATH
+# global NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST, TEST_CKPT_PATH
 
-NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST = 200, 50, 50
-TEST_CKPT_PATH = '..//Results//mlp_mixer_v0.hdf5'
+# NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST = 200, 50, 50
+# TEST_CKPT_PATH = '..//Results//mlp_mixer_v0.hdf5'
 
 #%%
 if __name__ == '__main__':

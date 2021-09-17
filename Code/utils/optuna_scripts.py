@@ -1,19 +1,21 @@
+#%%
 import optuna
 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
     Input, Dense, LSTM, GRU, Conv1D, Dropout, Flatten, Bidirectional,
-    TimeDistributed, GlobalAveragePooling1D
+    TimeDistributed, GlobalAveragePooling1D, Reshape
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 from tensorflow.keras.optimizers import Adam
+from tensorflow.python.keras.layers.merge import concatenate
 
 from utils.data_prep import gen_dataset
 from utils.metrics import last_timestep_mae, last_timestep_mse
 from utils.models import (
-    Patches, MLPMixerLayer)
+    Patches, MLPMixerLayer, wavenet_residual_block)
 
 DATASET_PARAMS = {
     'fold_json_path' : '..//Data//folds.json',
@@ -231,7 +233,6 @@ def optuna_lstm_many2one_v1(trial: optuna.trial.Trial):
         ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
 
-
 def optuna_conv1d_lstm_many2one_v0(trial: optuna.trial.Trial):
 
     DATASET_PARAMS['test_gen_dataset_flg'] = True
@@ -241,14 +242,16 @@ def optuna_conv1d_lstm_many2one_v0(trial: optuna.trial.Trial):
     units_1st = trial.suggest_int('1st_layer',4,16,step=4)
     filters_num = trial.suggest_categorical('filters_num', [4, 8, 16])
     kernel_size = trial.suggest_categorical('kernel_size', [3,5,7])
+    stride_size = trial.suggest_categorical('stride_size', [1, 3])
     lr = 7e-4
     input_shape = (24,4)
 
     # Create model
     ip = Input(shape=input_shape)
 
-    x = Conv1D(filters=filters_num, kernel_size=kernel_size, )
-    x = LSTM(units_1st, return_sequences=False)(ip)
+    x = Conv1D(
+        filters=filters_num, kernel_size=kernel_size, strides=stride_size)(ip)
+    x = LSTM(units_1st, return_sequences=False)(x)
     x = Dense(10)(x)
 
     model = Model(ip,x)
@@ -259,3 +262,101 @@ def optuna_conv1d_lstm_many2one_v0(trial: optuna.trial.Trial):
         model=model, dic_split=dic_split, lr=lr, 
         ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
+
+def optuna_wavenet_many2one_v0(trial: optuna.trial.Trial):
+
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    wn_num_filters = trial.suggest_categorical('num_filters',[4, 8, 16, 32])
+    wn_num_layers = trial.suggest_categorical('num_layers', [2,3,4,5])
+    wn_num_blocks = trial.suggest_categorical('num_blocks', [1,2,4,8])
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = Conv1D(wn_num_filters, kernel_size=2, padding='causal')(ip)
+    skip_to_last = []
+    for dilatation_rate in [2**i for i in range(wn_num_layers)] * wn_num_blocks:
+        x, skip = wavenet_residual_block(x, wn_num_filters, dilatation_rate)
+        skip = GlobalAveragePooling1D(data_format='channels_last')(skip)
+        skip = Reshape((1,-1))(skip)
+        skip_to_last.append(skip)
+    x = concatenate(skip_to_last, axis=1)
+    x = Flatten()(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+
+def optuna_wavenet_many2one_v1(trial: optuna.trial.Trial):
+
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    wn_num_filters = trial.suggest_categorical('num_filters',[4, 8, 16, 32])
+    wn_num_layers = trial.suggest_categorical('num_layers', [2,3,4,5])
+    wn_num_blocks = trial.suggest_categorical('num_blocks', [1,2,4,8])
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = Conv1D(wn_num_filters, kernel_size=2, padding='causal')(ip)
+    skip_to_last = []
+    for dilatation_rate in [2**i for i in range(wn_num_layers)] * wn_num_blocks:
+        x, skip = wavenet_residual_block(x, wn_num_filters, dilatation_rate)
+        skip = GlobalAveragePooling1D(data_format='channels_last')(skip)
+        skip = Reshape((-1,1))(skip)
+        skip_to_last.append(skip)
+    x = concatenate(skip_to_last, axis=2)
+    x = Flatten()(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+
+def wavenet():
+    # All suggested values
+    wn_num_filters = 32
+    wn_num_layers = 3
+    wn_num_blocks = 2
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = Conv1D(wn_num_filters, kernel_size=2, padding='causal')(ip)
+    skip_to_last = []
+    for dilatation_rate in [2**i for i in range(wn_num_layers)] * wn_num_blocks:
+        x, skip = wavenet_residual_block(x, wn_num_filters, dilatation_rate)
+        skip = GlobalAveragePooling1D(data_format='channels_last')(skip)
+        skip = Reshape((1,-1))(skip)
+        skip_to_last.append(skip)
+    x = concatenate(skip_to_last, axis=1)
+    x = Flatten()(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())

@@ -77,7 +77,22 @@ def save_energy_weather_figs():
 #%%
 if __name__ == '__main__':
     
-    insert_representation_in_csv(desired_col='temperature')
+    data_path = '..//Data//daily_dataset.csv//daily_dataset.csv'
+    info_lclid_path = '..//Data//informations_households.csv'
+    result = 0.15845344960689545
+    df = pd.read_csv(data_path)
+    df_info = pd.read_csv(info_lclid_path)
+    mask = (df_info['stdorToU'] == 'Std') & (df_info['Acorn_grouped'] == 'Affluent')
+    affluent_nonToU_lclids = list(df_info.loc[mask, 'LCLid'])
+    df_filt = df[df['energy_count']==48]
+    print("Número inicial de medicoes com 48: ", df_filt.shape[0])
+    df_filt = df_filt.set_index('LCLid').loc[affluent_nonToU_lclids,:]
+    print("Número inicial de medicoes com 48: ", df_filt.shape[0])
+    print('Consumo médio por dia é: ', df_filt['energy_sum'].mean())
+    print('Consumo médio em 5hrs é: ', df_filt['energy_sum'].mean()/48*10)
+    print('Consumo médio em 5hrs é: ', result**0.5/(df_filt['energy_sum'].mean()/48*10))
+
+    # insert_representation_in_csv(desired_col='temperature')
     # data_path = '..//Data//halfhourly_dataset//block_0.csv'
     # df_block_hh = pd.read_csv(data_path, header=0)
 

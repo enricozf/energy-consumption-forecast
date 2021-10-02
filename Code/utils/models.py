@@ -21,7 +21,8 @@ class Patches(tf.keras.layers.Layer):
             rates=[1,1,1,1],
             padding='VALID'
         )
-        patches = tf.squeeze(patches, axis=2)
+        # patches = tf.squeeze(patches, axis=2)
+        patches = tf.reshape(patches, [-1,self.num_patches,self.patch_size**2])
         return patches
     
     def get_config(self):

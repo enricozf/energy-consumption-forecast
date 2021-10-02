@@ -22,7 +22,11 @@ from utils.optuna_scripts import (
     optuna_dense_many2one_v1, optuna_mlp_mixer_many2one_v0,
     optuna_lstm_many2one_v0, optuna_lstm_many2one_v1,
     optuna_conv1d_lstm_many2one_v0, optuna_wavenet_many2one_v0,
-    optuna_wavenet_many2one_v1)
+    optuna_wavenet_many2one_v1, optuna_wavenet_mlp_mixer_many2one_v0,
+    optuna_conv1d_lstm_many2one_v1, optuna_wavenet_mlp_mixer_many2one_v1,
+    optuna_conv1d_lstm_many2one_v2, optuna_conv1d_lstm_many2one_v3,
+    optuna_lstm_many2one_v2,
+    wavenet)
 from utils.models import Patches, MLPMixerLayer
 
 # def gen_dense_model_v0(
@@ -357,9 +361,15 @@ def main_optuna(study_name: str, n_trials: int):
         'mlp_mixer_many2one_v0' : optuna_mlp_mixer_many2one_v0,
         'lstm_many2one_v0' : optuna_lstm_many2one_v0,
         'lstm_many2one_v1' : optuna_lstm_many2one_v1,
+        'lstm_many2one_v2' : optuna_lstm_many2one_v2,
         'conv1d_lstm_many2one_v0' : optuna_conv1d_lstm_many2one_v0,
+        'conv1d_lstm_many2one_v1' : optuna_conv1d_lstm_many2one_v1,
+        'conv1d_lstm_many2one_v2' : optuna_conv1d_lstm_many2one_v2,
+        'conv1d_lstm_many2one_v3' : optuna_conv1d_lstm_many2one_v3,
         'wavenet_many2one_v0' : optuna_wavenet_many2one_v0,
-        'wavenet_many2one_v1' : optuna_wavenet_many2one_v1
+        'wavenet_many2one_v1' : optuna_wavenet_many2one_v1,
+        'wavenet_mlp_mixer_many2one_v0' : optuna_wavenet_mlp_mixer_many2one_v0,
+        'wavenet_mlp_mixer_many2one_v1' : optuna_wavenet_mlp_mixer_many2one_v1
     }
 
     # Load or create study

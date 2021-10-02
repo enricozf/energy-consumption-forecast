@@ -233,6 +233,35 @@ def optuna_lstm_many2one_v1(trial: optuna.trial.Trial):
         ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
 
+def optuna_lstm_many2one_v2(trial: optuna.trial.Trial):
+
+    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32])
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    DATASET_PARAMS['batch_size'] = batch_size
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    units_1st = 18
+    units_2nd = 6
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = LSTM(units_1st, return_sequences=True)(ip)
+    x = LSTM(units_2nd, return_sequences=False)(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
 def optuna_conv1d_lstm_many2one_v0(trial: optuna.trial.Trial):
 
     DATASET_PARAMS['test_gen_dataset_flg'] = True
@@ -252,6 +281,115 @@ def optuna_conv1d_lstm_many2one_v0(trial: optuna.trial.Trial):
     x = Conv1D(
         filters=filters_num, kernel_size=kernel_size, strides=stride_size)(ip)
     x = LSTM(units_1st, return_sequences=False)(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+def optuna_conv1d_lstm_many2one_v1(trial: optuna.trial.Trial):
+
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    dropout_rate = trial.suggest_categorical('dropout_rate', [.0, .3, .5, .8])
+    filters_num = 8
+    kernel_size = 3
+    stride_size = 3
+    units_1st = 16
+    units_2nd = 8
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+    x = Conv1D(
+        filters=filters_num, kernel_size=kernel_size, strides=stride_size)(ip)
+    x = LSTM(units_1st, return_sequences=True)(x)
+    x = LSTM(units_2nd, return_sequences=False)(x)
+    x = Dense(20)(x)
+    x = Dropout(dropout_rate)(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+def optuna_conv1d_lstm_many2one_v2(trial: optuna.trial.Trial):
+
+    batch_size = trial.suggest_categorical('batch_size', [32, 64])
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    DATASET_PARAMS['batch_size'] = batch_size
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    dropout_rate = 0.3
+    filters_num = 8
+    kernel_size = 3
+    stride_size = 3
+    units_1st = 16
+    units_2nd = 8
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+    x = Conv1D(
+        filters=filters_num, kernel_size=kernel_size, strides=stride_size)(ip)
+    x = LSTM(units_1st, return_sequences=True)(x)
+    x = LSTM(units_2nd, return_sequences=False)(x)
+    x = Dense(20)(x)
+    x = Dropout(dropout_rate)(x)
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+def optuna_conv1d_lstm_many2one_v3(trial: optuna.trial.Trial):
+
+    batch_size = 32
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    DATASET_PARAMS['batch_size'] = batch_size
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    dropout_rate = 0.3
+    filters_num = 8
+    first_kernel_size = 3
+    secnd_kernel_size = trial.suggest_int('2nd_kernel_size', 2, 4)
+    stride_size = 3
+    units_1st = 16
+    units_2nd = 8
+    lr = 5e-4
+    input_shape = (24,4)
+
+    # Create model
+    ip = Input(shape=input_shape)
+    x = Conv1D(
+        filters=filters_num, kernel_size=first_kernel_size, strides=stride_size)(ip)
+    x = Conv1D(
+        filters=filters_num, kernel_size=secnd_kernel_size, strides=1)(x)
+    x = LSTM(units_1st, return_sequences=True)(x)
+    x = LSTM(units_2nd, return_sequences=False)(x)
+    x = Dense(20)(x)
+    x = Dropout(dropout_rate)(x)
     x = Dense(10)(x)
 
     model = Model(ip,x)
@@ -306,8 +444,8 @@ def optuna_wavenet_many2one_v1(trial: optuna.trial.Trial):
 
     # All suggested values
     wn_num_filters = trial.suggest_categorical('num_filters',[4, 8, 16, 32])
-    wn_num_layers = trial.suggest_categorical('num_layers', [2,3,4,5])
-    wn_num_blocks = trial.suggest_categorical('num_blocks', [1,2,4,8])
+    wn_num_layers = 4
+    wn_num_blocks = 2
     lr = 5e-4
     input_shape = (24,4)
 
@@ -334,14 +472,23 @@ def optuna_wavenet_many2one_v1(trial: optuna.trial.Trial):
         ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
     )
 
+def optuna_wavenet_mlp_mixer_many2one_v0(trial: optuna.trial.Trial):
 
-def wavenet():
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    # DATASET_PARAMS['fold_json_path'] = '..//Data//folds_test.json'
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
     # All suggested values
     wn_num_filters = 32
-    wn_num_layers = 3
+    wn_num_layers = 4
     wn_num_blocks = 2
-    lr = 5e-4
+    lr = 4e-4
     input_shape = (24,4)
+    num_blocks = 4
+    dropout_rate = trial.suggest_categorical('dropout_rate', [0.0, 0.3, 0.5, 0.8])
+    patch_size = 4
+    hidden_units = patch_size**2
+    num_patches = wn_num_filters*wn_num_layers*wn_num_blocks // hidden_units
 
     # Create model
     ip = Input(shape=input_shape)
@@ -354,7 +501,111 @@ def wavenet():
         skip = Reshape((1,-1))(skip)
         skip_to_last.append(skip)
     x = concatenate(skip_to_last, axis=1)
-    x = Flatten()(x)
+
+    x = Patches(patch_size=patch_size, num_patches=num_patches)(x)
+
+    for block in range(num_blocks):
+        x = MLPMixerLayer(
+            num_patches=num_patches, hidden_units=hidden_units, 
+            dropout_rate=dropout_rate, name=f'MLP_Mixer_Layer_{block}')(x)
+    x = GlobalAveragePooling1D()(x)
+
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+def optuna_wavenet_mlp_mixer_many2one_v1(trial: optuna.trial.Trial):
+
+    sequence_length = trial.suggest_categorical('sequence_length', [48, 72])
+    wn_num_layers = trial.suggest_categorical('wn_num_layers', [4, 6])
+
+    DATASET_PARAMS['test_gen_dataset_flg'] = True
+    DATASET_PARAMS['sequence_length'] = sequence_length
+    # DATASET_PARAMS['fold_json_path'] = '..//Data//folds_test.json'
+    dic_split, scaler = gen_dataset(**DATASET_PARAMS)
+
+    # All suggested values
+    wn_num_filters = 32
+    wn_num_blocks = 2
+    lr = 4e-4
+    input_shape = (sequence_length,4)
+    num_blocks = 4
+    dropout_rate = 0.3
+    patch_size = 4
+    hidden_units = patch_size**2
+    num_patches = wn_num_filters*wn_num_layers*wn_num_blocks // hidden_units
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = Conv1D(wn_num_filters, kernel_size=2, padding='causal')(ip)
+    skip_to_last = []
+    for dilatation_rate in [2**i for i in range(wn_num_layers)] * wn_num_blocks:
+        x, skip = wavenet_residual_block(x, wn_num_filters, dilatation_rate)
+        skip = GlobalAveragePooling1D(data_format='channels_last')(skip)
+        skip = Reshape((1,-1))(skip)
+        skip_to_last.append(skip)
+    x = concatenate(skip_to_last, axis=1)
+
+    x = Patches(patch_size=patch_size, num_patches=num_patches)(x)
+
+    for block in range(num_blocks):
+        x = MLPMixerLayer(
+            num_patches=num_patches, hidden_units=hidden_units, 
+            dropout_rate=dropout_rate, name=f'MLP_Mixer_Layer_{block}')(x)
+    x = GlobalAveragePooling1D()(x)
+
+    x = Dense(10)(x)
+
+    model = Model(ip,x)
+
+    print(model.summary())
+
+    return evaluate_model(
+        model=model, dic_split=dic_split, lr=lr, 
+        ckpt_filepath=DATASET_PARAMS.get('ckpt_filepath')
+    )
+
+def wavenet():
+    # All suggested values
+    wn_num_filters = 32
+    wn_num_layers = 4
+    wn_num_blocks = 2
+    lr = 4e-4
+    input_shape = (24,4)
+    num_blocks = 4
+    dropout_rate = 0.3
+    patch_size = 4
+    hidden_units = int(patch_size**2)
+    num_patches = wn_num_filters*wn_num_layers*wn_num_blocks // hidden_units
+
+    # Create model
+    ip = Input(shape=input_shape)
+
+    x = Conv1D(wn_num_filters, kernel_size=2, padding='causal')(ip)
+    skip_to_last = []
+    for dilatation_rate in [2**i for i in range(wn_num_layers)] * wn_num_blocks:
+        x, skip = wavenet_residual_block(x, wn_num_filters, dilatation_rate)
+        skip = GlobalAveragePooling1D(data_format='channels_last')(skip)
+        skip = Reshape((-1,1))(skip)
+        skip_to_last.append(skip)
+    x = concatenate(skip_to_last, axis=2)
+
+    x = Patches(patch_size=patch_size, num_patches=num_patches)(x)
+
+    for block in range(num_blocks):
+        x = MLPMixerLayer(
+            num_patches=num_patches, hidden_units=hidden_units, 
+            dropout_rate=dropout_rate, name=f'MLP_Mixer_Layer_{block}')(x)
+    x = GlobalAveragePooling1D()(x)
+
     x = Dense(10)(x)
 
     model = Model(ip,x)

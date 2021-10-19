@@ -237,6 +237,7 @@ def gen_dataset_split(
     num_sm_split: int = None,
     time_col: str = 'tstp',
     scaler: FunctionTransformer = None,
+    std_outlier_thrs: int = None,
     energy_col: str = 'energy(kWh/hh)',
     random_seed: int = 42,
     pred_samples: int = 10,
@@ -266,6 +267,11 @@ def gen_dataset_split(
     df_sm = df.loc[first_sm].copy()
     if scaler:
         df_sm[energy_col] = scaler.transform(df_sm[[energy_col]])
+        if (fold_split=='train') & (std_outlier_thrs is not None):
+            print('Using outlier threshold: ', std_outlier_thrs)
+            df_sm[energy_col] = df_sm[energy_col].mask(
+                                    df_sm[energy_col] > std_outlier_thrs, 
+                                    std_outlier_thrs)
     df_sm = df_sm.set_index(time_col).sort_index().values
     if test_gen_dataset_flg == False:
         dataset = gen_dataset_obj(
@@ -286,6 +292,10 @@ def gen_dataset_split(
         # print('--- Tamanho do DF: ', df_sm.shape)
         if scaler:
             df_sm[energy_col] = scaler.transform(df_sm[[energy_col]])
+            if (fold_split=='train') & (std_outlier_thrs is not None):
+                df_sm[energy_col] = df_sm[energy_col].mask(
+                                        df_sm[energy_col] > std_outlier_thrs, 
+                                        std_outlier_thrs)
         df_sm = df_sm.set_index(time_col).sort_index().values
         if test_gen_dataset_flg == False:
             dataset_aux = gen_dataset_obj(
@@ -316,6 +326,7 @@ def gen_dataset(
     temp_diff_thrs: float = None,
     boxcox_trnsf_flag: bool = True,
     scale_flg: bool = True,
+    std_outlier_thrs: int = None,
     num_sm_split: dict = {'train':None, 'val':None, 'test':None},
     sequence_length: int = 24,
     pred_samples: int = 10,
@@ -367,7 +378,8 @@ def gen_dataset(
             df, dic_folds, fold=fold, fold_split=split, 
             time_col=time_col, scaler=scaler, sequence_length=sequence_length,
             pred_samples=pred_samples, batch_size=batch_size, 
-            num_sm_split=num_sm_split[split], **kwargs)
+            num_sm_split=num_sm_split[split], std_outlier_thrs=std_outlier_thrs,
+            **kwargs)
 
         dic_splits[f'{split}_num_batches'] = num_batches
 

@@ -90,7 +90,8 @@ if __name__ == '__main__':
     print("Número inicial de medicoes com 48: ", df_filt.shape[0])
     print('Consumo médio por dia é: ', df_filt['energy_sum'].mean())
     print('Consumo médio em 5hrs é: ', df_filt['energy_sum'].mean()/48*10)
-    print('Consumo médio em 5hrs é: ', result**0.5/(df_filt['energy_sum'].mean()/48*10))
+    print('RMSE para previsão 5hrs: ', result**0.5)
+    print('RMSE para previsão 5hrs dividido pelo consumo: ', result**0.5/(df_filt['energy_sum'].mean()/48*10))
 
     # insert_representation_in_csv(desired_col='temperature')
     # data_path = '..//Data//halfhourly_dataset//block_0.csv'

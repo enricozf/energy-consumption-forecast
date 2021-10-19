@@ -6,3 +6,4 @@
 *.h5
 *.parquet.gzip
 *.pkl
+folds_test.json

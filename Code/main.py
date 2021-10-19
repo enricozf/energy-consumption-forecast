@@ -1,185 +1,449 @@
 #%%
-import pandas as pd
-from numpy import ndarray
-from json import dump, load
-from numpy.random import shuffle
-from os.path import normpath, join
+import joblib
+import sys
+import os
+
 import tensorflow as tf
-from tensorflow.python.ops.control_flow_ops import Assert
-from utils.exploratory_data_analysis import (read_acorn_group_blocks, 
-                                             split_into_acorns)
+from tensorflow import keras
+from tensorflow.keras.layers import (
+    Input, Dense, LSTM, GRU, Conv1D, Dropout, Flatten, Bidirectional,
+    TimeDistributed, GlobalAveragePooling1D
+)
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.optimizers import Adam
 
-def create_df(
-    consumption_file_path : str ='..//Data//halfhourly_dataset',
-    sm_info_file : str = '..//Data//informations_households.csv',
-    desired_acorn_name : str = 'Affluent'):
+import optuna
+
+# from utils.metrics import last_timestep_mae, last_timestep_mse
+# from utils.data_prep import gen_dataset
+from utils.optuna_scripts import (
+    optuna_dense_many2many_v0, optuna_dense_many2one_v0, 
+    optuna_dense_many2one_v1, optuna_mlp_mixer_many2one_v0,
+    optuna_lstm_many2one_v0, optuna_lstm_many2one_v1,
+    optuna_conv1d_lstm_many2one_v0, optuna_wavenet_many2one_v0,
+    optuna_wavenet_many2one_v1, optuna_wavenet_mlp_mixer_many2one_v0,
+    optuna_conv1d_lstm_many2one_v1, optuna_wavenet_mlp_mixer_many2one_v1,
+    optuna_conv1d_lstm_many2one_v2, optuna_conv1d_lstm_many2one_v3,
+    optuna_lstm_many2one_v2,
+    wavenet)
+from utils.models import Patches, MLPMixerLayer
+
+# def gen_dense_model_v0(
+#     input_shape, output_samples: int = 10, print_summary: bool = False):
     
-    # Get all SM id from desired acorn and remove ToU SMs
-    sm_info_df = pd.read_csv(sm_info_file, header=0)
-    sm_info_df = sm_info_df[sm_info_df['stdorToU']=='Std']
-    sm_info_df = sm_info_df[sm_info_df['Acorn_grouped']==desired_acorn_name]
-    desired_blocks = list(set(sm_info_df['file'].values))
+#     ip = Input(shape=input_shape)
+#     x = TimeDistributed(Dense(output_samples))(ip)
+#     x = TimeDistributed(Dense(output_samples))(x)
+
+#     model = Model(ip, x)
+
+#     if print_summary:
+#         print(model.summary())
+
+#     return model
+
+
+# def gen_dense_model_v1(
+#     input_shape, output_samples: int = 10, print_summary: bool = False):
     
-    # Read hourly data from desired acorn
-    data_df = pd.DataFrame()
-    for block_file in desired_blocks:
-        print(f'Loading {block_file} file...')
-        file_path = normpath(join(consumption_file_path, block_file + '.csv'))
-        aux_df = pd.read_csv(file_path, header=0).set_index('LCLid')
-        # print('--- Shape: {}'.format(aux_df.shape))
-        aux_df = aux_df.loc[sm_info_df[sm_info_df['file']==block_file]\
-                            ['LCLid'].values]
-        # print('--- Shape: {}'.format(aux_df.shape))
-        data_df = pd.concat([data_df, aux_df.reset_index()], axis=0)
-    print('All datablock files were read.')
+#     ip = Input(shape=input_shape)
+#     x = TimeDistributed(Dense(output_samples))(ip)
+#     # x = TimeDistributed(Dense(output_samples//4))(x)
+#     x = Flatten()(x)
+#     x = Dense(output_samples)(x)
 
-    return data_df
+#     model = Model(ip, x)
 
-def monday_or_weekend(elem):
-    return 1 if elem.weekday() in [0,5,6] else 0
+#     if print_summary:
+#         print(model.summary())
 
-def create_complete_df(
-    block_file_name:str = '..//Data//halfhourly_dataset//block_0.csv',
-    weather_file_name:str = '..//Data//weather_hourly_darksky_final.csv',
-    time_col_data:str = 'tstp',
-    time_col_weather:str = 'time',
-    desired_weather_cols:list = ['apparentTemperature', 'weekly_temperature'],
-    save_df_path:bool = True,
-    num_folds:int = 0): #uvIndex
+#     return model
+
+# class Patches(tf.keras.layers.Layer):
+#     def __init__(self, patch_size=4, num_patches=6, *args, **kwargs):
+#         super(Patches, self).__init__(**kwargs)
+#         self.patch_size = int(patch_size)
+#         self.num_patches = int(num_patches)
+
+#     def call(self, sequences):
+#         patches = tf.image.extract_patches(
+#             images=tf.expand_dims(sequences, axis=-1),
+#             sizes=[1,self.patch_size, self.patch_size,1],
+#             strides=[1,self.patch_size,self.patch_size,1],
+#             rates=[1,1,1,1],
+#             padding='VALID'
+#         )
+#         patches = tf.squeeze(patches, axis=2)
+#         return patches
     
-    # TODO: Merge + fill NaN
-    df = create_df()
-    df.head()
-    print('Shape: ', df.shape)
-    df[time_col_data] = pd.to_datetime(df[time_col_data])
-    df['MondayORWE'] = df[time_col_data].apply(monday_or_weekend)
-    # df['weekday'] = df[time_col_data].apply(lambda x: x.weekday())
-    df.set_index(time_col_data, inplace=True)
+#     def get_config(self):
+#         config = super(Patches, self).get_config()
+#         config.update(
+#             {
+#                 "patch_size" : self.patch_size,
+#                 "num_patches" : self.num_patches
+#             }
+#         )
+#         return config
 
-    # Create weather df
-    weather_df = pd.read_csv(weather_file_name, header=0)
-    weather_df['time'] = pd.to_datetime(weather_df['time'])
-    weather_df.set_index(time_col_weather, inplace=True)
+# class MLPMixerLayer(tf.keras.layers.Layer):
+#     def __init__(self, dropout_rate=0, *args, **kwargs):
+#         super(MLPMixerLayer, self).__init__(*args, **kwargs)
+#         self.dropout_rate = dropout_rate
 
-    # Include weather features in main DataFrame
-    for w_col in desired_weather_cols:
-        weather_sr = pd.Series(
-            data=weather_df[w_col].rolling(2).mean()[1:].values,
-            index=(weather_df.index[:-1]+pd.Timedelta(30, unit='min')).values
-        )
-        weather_sr = pd.concat([weather_df[w_col], weather_sr]).sort_index()
-        # Insert weather data to main data
-        df = pd.merge(df, 
-                      pd.DataFrame(weather_sr).rename(columns={0:w_col}),
-                      how='inner', left_index=True, right_index=True)
+#     def build(self, num_patches, hidden_units):
+#         self.mlp1 = tf.keras.Sequential(
+#             [
+#             Dense(units=num_patches, activation='gelu'),
+#             Dense(units=num_patches),
+#             Dropout(rate=self.dropout_rate)
+#             ]
+#         )
+
+#         self.mlp2 = tf.keras.Sequential(
+#             [
+#             Dense(units=num_patches, activation='gelu'),
+#             Dense(units=hidden_units),
+#             Dropout(rate=self.dropout_rate)
+#             ]
+#         )
+#         self.normalize = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+
+#     def call(self, inputs):
+#         # Apply layer normalization.
+#         x = self.normalize(inputs)
+#         # Transpose inputs from [num_batches, num_patches, hidden_units] to [num_batches, hidden_units, num_patches].
+#         x_channels = tf.linalg.matrix_transpose(x)
+#         # Apply mlp1 on each channel independently.
+#         mlp1_outputs = self.mlp1(x_channels)
+#         # Transpose mlp1_outputs from [num_batches, hidden_dim, num_patches] to [num_batches, num_patches, hidden_units].
+#         mlp1_outputs = tf.linalg.matrix_transpose(mlp1_outputs)
+#         # Add skip connection.
+#         x = mlp1_outputs + inputs
+#         # Apply layer normalization.
+#         x_patches = self.normalize(x)
+#         # Apply mlp2 on each patch independtenly.
+#         mlp2_outputs = self.mlp2(x_patches)
+#         # Add skip connection.
+#         x = x + mlp2_outputs
+#         return x
+
+#     def get_config(self):
+#         config = super(MLPMixerLayer, self).get_config()
+#         config.update(
+#             {
+#                 "mlp1" : self.mlp1,
+#                 "mlp2" : self.mlp2,
+#                 "normalize" : self.normalize
+#             }
+#         )
+#         return config
+
+# def gen_mlp_mixer_model_v0(
+#     input_shape: list, patch_size: int, #hidden_units: int, 
+#     num_blocks: int = 1, dropout_rate: float = 0, 
+#     output_samples: int = 10, print_summary: bool = False):
     
-    df.reset_index(inplace=True)
-    if save_df_path:
-        df.to_csv('..//Data//final_data.csv', index=False)
+#     num_patches = input_shape[0] / patch_size
+#     hidden_units = patch_size**2
 
+#     ip = Input(shape=input_shape)
+#     x = Patches(patch_size=patch_size, num_patches=num_patches)(ip)
+#     x = keras.Sequential(
+#         [MLPMixerLayer(
+#             num_patches, hidden_units, dropout_rate) for _ in range(num_blocks)]
+#     )(x)
+#     x = GlobalAveragePooling1D()(x)
+#     x = Dense(output_samples)(x)
 
-    return df
+#     model = Model(ip, x)
 
-def separate_sm_in_folds(
-    lcl_ids: list, 
-    fold_json_path: str, 
-    n_folds: int =4):
-    fold_step = int(len(lcl_ids)/n_folds//1)
-    # print()
-    test_step = int(fold_step/5//1)
-    shuffle(lcl_ids)
+#     if print_summary:
+#         print(model.summary())
 
-    dic_folds = {str(fold) : lcl_ids[fold*fold_step:(fold+1)*fold_step] \
-                 for fold in range(n_folds)}
-    plus_test_sms = lcl_ids[fold_step*n_folds:]
+#     return model
 
-    folds_json = {}
-
-    for fold in range(n_folds):
-        fold = str(fold)
-        folds_json[fold] = {k : [] for k in ['train','val','test']}
-        for fold_group in dic_folds.keys():
-            if fold == fold_group:
-                folds_json[fold]['val'].extend(dic_folds[fold_group][test_step:])
-                folds_json[fold]['test'].extend(dic_folds[fold_group][:test_step])
-                folds_json[fold]['test'].extend(plus_test_sms)
-            else:
-                folds_json[fold]['train'].extend(dic_folds[fold_group])
-
-    with open(fold_json_path, 'w') as f:
-        dump(folds_json, f)
-
-    # return folds_json
-
-def gen_dataset_obj(
-    df_values: ndarray,
-    sequence_length: int = 24,
-    pred_samples: int = 10,
-    batch_size: int = 64):
+# def compile_and_fit(
+#     model: Model, ckpt_filepath: str, train_dataset: tf.data.Dataset, 
+#     val_dataset: tf.data.Dataset = None, early_stopping: bool=True,
+#     multiple_ts_outputs = True, **kwargs):
     
-    dataset = tf.data.Dataset.from_tensor_slices(df_values)
-    dataset = dataset.window(sequence_length+pred_samples, shift=1, drop_remainder=True)
-    dataset = dataset.flat_map(lambda window: window.batch(sequence_length+pred_samples))
-    dataset = dataset.batch(batch_size, drop_remainder=True)#.shuffle(10000)
-    dataset = dataset.map(lambda window: (window[:, :sequence_length, :], window[:, sequence_length:, 0]))
+#     # Configuring model callbacks
+#     print('Creating callbacks...')
+#     if early_stopping:
+#         earlypointer = EarlyStopping(
+#             monitor='val_loss', min_delta=kwargs.get('early_stop_min_delta', 0.00001),
+#             patience=kwargs.get('early_stop_patience', 5), verbose=1
+#             )
+#         callbacks = [earlypointer]
+#     else:
+#         callcacks = []
 
-    return dataset
+#     ckpt_callback = ModelCheckpoint(
+#         filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+#     )
+#     callbacks.append(ckpt_callback)
 
-def gen_dataset(
-    df: pd.DataFrame,
-    dic_folds: dict,
-    fold: str = '0',
-    fold_split: str = 'train',
-    **kwargs):
-    # # Verify sequence_length is in passed arguments
-    # sequence_length = kwargs.get('sequence_length')
-    # try:
-    #     assert sequence_length
-    # except AssertionError:
-    #     raise ValueError("Missing 'sequence_length' parameter.")
+#     # log_dir = "..//Results//logs//fit//" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+#     # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+#     # callbacks.append(tensorboard_callback)
 
-    lst_sms = dic_folds[fold][fold_split].copy()
-    print('Tamanho lista de sms: ', len(lst_sms))
-    first_sm = lst_sms.pop(0)
+#     # Compiling the model
+#     print('Compiling model...')
+#     if multiple_ts_outputs:
+#         model.compile(
+#             optimizer=Adam(learning_rate=kwargs.get('lr',0.001)),
+#             metrics=[last_timestep_mae,last_timestep_mse],
+#             loss=tf.keras.losses.MeanSquaredError()
+#         )
+#     else:
+#         model.compile(
+#             optimizer=Adam(learning_rate=kwargs.get('lr',0.001)),
+#             metrics=[tf.keras.losses.MeanAbsoluteError()],
+#             loss=tf.keras.losses.MeanSquaredError()
+#         )
 
-    df_sm = df.loc[first_sm].copy()
-    df_sm = df_sm.reset_index().drop('LCLid', axis=1).set_index('tstp').values
-    dataset = gen_dataset_obj(df_sm, **kwargs)
+#     # Fitting the model
+#     print('Fitting model...')
+#     hist = model.fit(train_dataset, callbacks=callbacks,
+#                      validation_data=val_dataset, verbose=1, **kwargs)
 
-    # TODO: Nem o dataset nem o dataset_aux sao atualizados neste for. 
-    #       Será um problema do MapDataset, por ser uma classe diferente?
-    for sm in lst_sms:
-        df_sm = df.loc[sm].copy()
-        # print('--- Tamanho do DF: ', df_sm.shape)
-        df_sm = df_sm.set_index('tstp').sort_index().values
-        dataset_aux = gen_dataset_obj(df_sm, **kwargs)
-        dataset = dataset.concatenate(dataset_aux)
+#     return model, hist
 
-    return dataset.shuffle(int(5e6))#.map(lambda window: (window[:, :sequence_length, :], window[:, sequence_length:, 0]))
+# def optuna_dense_model_v0(trial: optuna.trial.Trial):
+
+#     fold_json_path = '..//Data//folds.json'
+#     ckpt_filepath = '..//Results//tmp//best_model.hdf5'
+#     dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
+#                                     time_col='index', scale_flg=True,
+#                                     num_sm_split={
+#                                         'train':NUM_SM_TRAIN, 
+#                                         'val':NUM_SM_VAL, 
+#                                         'test':NUM_SM_TEST},
+#                                     boxcox_trnsf_flag=True,
+#                                     batch_size=512)
+
+#     ip = Input(shape=(24,4))
+
+#     x = TimeDistributed(Dense(trial.suggest_int('1st_layer',4,20,step=4),
+#                               activation='relu'))(ip)
+#     # if num_dense_layers == 3:
+#     #     x = TimeDistributed(Dense(trial.suggest_int('2nd_layer',4,20,step=4),
+#     #                               activation='relu'))(ip)
+
+#     x = TimeDistributed(Dense(10))(x)
+
+#     model = Model(ip,x)
+
+#     print(model.summary())
+
+#     earlypointer = EarlyStopping(
+#             monitor='val_loss', min_delta=0.00001,
+#             patience=5, verbose=1
+#             )
+#     ckpt_callback = ModelCheckpoint(
+#         filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+#     )
+#     callbacks = [earlypointer, ckpt_callback]
+
+#     # Compile model
+#     print('Compiling model...')
+#     lr = trial.suggest_loguniform('lr', 1e-5,1e-3)
+#     model.compile(
+#         optimizer=Adam(learning_rate=lr),
+#         metrics=[last_timestep_mae,last_timestep_mse],
+#         loss=tf.keras.losses.MeanSquaredError()
+#     )
+
+#     # Fit model
+#     model.fit(
+#         dic_split['train'].repeat(), epochs=1000, callbacks=callbacks,
+#         validation_data=dic_split['val'].repeat(),verbose=2,
+#         steps_per_epoch=dic_split['train_num_batches']//10,
+#         validation_steps=dic_split['val_num_batches']*.9//1
+#     )
+
+#     # Load best model weights
+#     print('Loading best model for validation...')
+#     best_model = keras.models.load_model(
+#         ckpt_filepath,
+#         custom_objects={
+#             "last_timestep_mae" : last_timestep_mae,
+#             "last_timestep_mse" : last_timestep_mae
+#         })
+#     best_model.compile(
+#         optimizer=Adam(learning_rate=lr),
+#         metrics=[last_timestep_mae,last_timestep_mse],
+#         loss=tf.keras.losses.MeanSquaredError()
+#     )
+
+#     # Evaluate and return loss for test dataset
+#     scores = best_model.evaluate(
+#         dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
+#     return scores[0]
 
 
+# def optuna_dense_model_v1(trial: optuna.trial.Trial):
+
+#     fold_json_path = '..//Data//folds.json'
+#     ckpt_filepath = '..//Results//tmp//best_model.hdf5'
+#     dic_split, scaler = gen_dataset(
+#         final_data_path='..//Data//acorn_{}_preproc_data.parquet.gzip',
+#         fold_json_path=fold_json_path, fold='3',
+#         time_col='index', scale_flg=True,
+#         num_sm_split={
+#             'train':NUM_SM_TRAIN, 
+#             'val':NUM_SM_VAL, 
+#             'test':NUM_SM_TEST},
+#         boxcox_trnsf_flag=True,
+#         batch_size=256,
+#         test_gen_dataset_flg=True)
+
+#     # All suggested values
+#     units = trial.suggest_int('1st_layer',4,20,step=4)
+#     lr = trial.suggest_loguniform('lr', 1e-4,1e-3, 4.9e-4)
+
+#     ip = Input(shape=(24,4))
+
+#     x = TimeDistributed(Dense(units, activation='relu'))(ip)
+#     x = Flatten()(x)
+#     x = Dense(10)(x)
+
+#     model = Model(ip,x)
+
+#     print(model.summary())
+
+#     earlypointer = EarlyStopping(
+#             monitor='val_loss', min_delta=0.00001,
+#             patience=5, verbose=1
+#             )
+#     ckpt_callback = ModelCheckpoint(
+#         filepath=ckpt_filepath, verbose=1, monitor='val_loss', save_best_only=True
+#     )
+#     callbacks = [earlypointer, ckpt_callback]
+
+#     # Compile model
+#     print('Compiling model...')
+#     model.compile(
+#         optimizer=Adam(learning_rate=lr),
+#         metrics=[tf.keras.losses.MeanAbsoluteError()],
+#         loss=tf.keras.losses.MeanSquaredError()
+#     )
+
+#     # Fit model
+#     model.fit(
+#         dic_split['train'].cache().repeat().prefetch(tf.data.AUTOTUNE), 
+#         epochs=1000, callbacks=callbacks,
+#         validation_data=dic_split['val'].repeat().prefetch(tf.data.AUTOTUNE),
+#         verbose=2,
+#         steps_per_epoch=dic_split['train_num_batches']//10,
+#         validation_steps=dic_split['val_num_batches']*.9//1
+#     )
+
+#     # Load best model weights
+#     print('Loading best model for validation...')
+    
+#     model.load_weights(ckpt_filepath)
+
+#     # Evaluate and return loss for test dataset
+#     scores = model.evaluate(
+#         dic_split['test'], steps=dic_split['test_num_batches']*.9//1)
+#     return scores[0]
+
+
+def main_optuna(study_name: str, n_trials: int):
+    # Select correct model to be tunned 
+    dic_models = {
+        'dense_many2many_v0' : optuna_dense_many2many_v0,
+        'dense_many2one_v0' : optuna_dense_many2one_v0,
+        'dense_many2one_v1' : optuna_dense_many2one_v1,
+        'mlp_mixer_many2one_v0' : optuna_mlp_mixer_many2one_v0,
+        'lstm_many2one_v0' : optuna_lstm_many2one_v0,
+        'lstm_many2one_v1' : optuna_lstm_many2one_v1,
+        'lstm_many2one_v2' : optuna_lstm_many2one_v2,
+        'conv1d_lstm_many2one_v0' : optuna_conv1d_lstm_many2one_v0,
+        'conv1d_lstm_many2one_v1' : optuna_conv1d_lstm_many2one_v1,
+        'conv1d_lstm_many2one_v2' : optuna_conv1d_lstm_many2one_v2,
+        'conv1d_lstm_many2one_v3' : optuna_conv1d_lstm_many2one_v3,
+        'wavenet_many2one_v0' : optuna_wavenet_many2one_v0,
+        'wavenet_many2one_v1' : optuna_wavenet_many2one_v1,
+        'wavenet_mlp_mixer_many2one_v0' : optuna_wavenet_mlp_mixer_many2one_v0,
+        'wavenet_mlp_mixer_many2one_v1' : optuna_wavenet_mlp_mixer_many2one_v1
+    }
+
+    # Load or create study
+    save_file_path = '..//Results//'+study_name+'.pkl'
+    if os.path.exists(save_file_path):
+        study = joblib.load(save_file_path)
+    else:
+        study = optuna.create_study(
+            direction='minimize', study_name=study_name, load_if_exists=True)
+
+    lefting_trials = n_trials - len(study.trials)
+    lefting_trials = 0 if lefting_trials < 0 else lefting_trials
+    for _ in range(lefting_trials):
+        study.optimize(
+            dic_models[study_name], n_trials=1, show_progress_bar=True)
+
+        print("Number of finished trials: {}".format(len(study.trials)))
+
+        print("Best trial:")
+        trial = study.best_trial
+
+        print("  Value: {}".format(trial.value))
+
+        print("  Params: ")
+        for key, value in trial.params.items():
+            print("    {}: {}".format(key, value))
+
+        joblib.dump(study, save_file_path)
+
+# def main_test():
+#     fold_json_path = '..//Data//folds.json'
+#     dic_split, scaler = gen_dataset(fold_json_path=fold_json_path, fold='3',
+#                                     time_col='index', scale_flg=True,
+#                                     num_sm_split={
+#                                         'train':NUM_SM_TRAIN, 
+#                                         'val':NUM_SM_VAL, 
+#                                         'test':NUM_SM_TEST},
+#                                     boxcox_trnsf_flag=True,
+#                                     batch_size=256,
+#                                     test_gen_dataset_flg=True)
+#     print(dic_split['train_num_batches'])
+#     model = gen_mlp_mixer_model_v0(
+#         input_shape=(24,4), patch_size=4, print_summary=True)
+#     model, hist = compile_and_fit(model, TEST_CKPT_PATH, epochs=1000,
+#                                   train_dataset=dic_split['train'].repeat(),
+#                                   val_dataset=dic_split['val'].repeat(),
+#                                   steps_per_epoch=dic_split['train_num_batches']//10,
+#                                   validation_steps=dic_split['val_num_batches']*.9//1,
+#                                   multiple_ts_outputs=False)
+#     return model, hist
+
+# global NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST, TEST_CKPT_PATH
+
+# NUM_SM_TRAIN, NUM_SM_VAL, NUM_SM_TEST = 200, 50, 50
+# TEST_CKPT_PATH = '..//Results//mlp_mixer_v0.hdf5'
+
+#%%
 if __name__ == '__main__':
-    final_data_path = '..//Data//final_data.csv'
-    fold_json_path = '..//Data//folds.json'
-    desired_fold = '0'
-    # TODO: Splitar os dados em input e target
-    df = pd.read_csv(final_data_path)
-    # df.drop('Unnamed: 0', axis=1, inplace=True)
+    args = sys.argv
+    assert len(args) == 3, 'Correct arguments passed to python execution.'
+    main_optuna(
+        study_name=args[1],
+        n_trials=int(args[2]))
+    # main_test()
 
-    with open(fold_json_path, 'r') as f:
-        dic_folds = load(f)
 
-# AQUI
-    df.sort_values(['LCLid','tstp'],inplace=True)
-    df.set_index('LCLid', inplace=True)
-    # df_test = df.loc[dic_folds['0']['train'][0]]
-    # df_test_test = df_test.head(100)
-    # df_values = df_test_test.reset_index().drop('LCLid',axis=1).set_index('tstp').values
-
-    dataset = gen_dataset(df, dic_folds, fold_split='test')
-    # lst_lcl_ids = list(df['LCLid'].unique())
-    # separate_sm_in_folds(lst_lcl_ids, fold_json_path)
-    # TODO: Splitar os dados em treino teste
-    # TODO: Alimentar e treinar modelo
-
-# %%
+#TODO: Código para pegar o y_true e o y_pred
+# y_true_stacked = None
+# y_pred_stacked = None
+# for x,y in dic_split['test']:
+#     if y_true_stacked is not None:
+#         y_true_stacked = np.vstack([y_true_stacked, y])
+#         y_pred_stacked = np.vstack([y_pred_stacked,
+#                                     model.predict(x)])
+#     else:
+#         y_true_stacked = y
+#         y_pred_stacked = model.predict(x)
